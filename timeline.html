@@ -31,30 +31,48 @@
   <section id="timeline" aria-labelledby="h-timeline">
     <div class="section-head">
       <h2 id="h-timeline">Timeline</h2>
-      <p>Every model turn of the agent (Harbor's <code>agent/trajectory.json</code>): its thinking, what it said, each command with the command's output (open a row), and the turn's tokens. Between them, what the robot did: the robot service's record in standard mode (<code>artifacts/data/episode.jsonl</code>), the simulator tooling's own log in privileged mode (<code>rcb_session_log.jsonl</code>, self-reported). Times count from the agent's first turn.</p>
+      <p>Every model turn of the agent (Harbor's <code>agent/trajectory.json</code>): its thinking, what it said, each command with the command's output (open a row), and the turn's tokens. Between them, what the robot did: the robot service's record in standard mode (<code>artifacts/data/episode.jsonl</code>), the simulator tooling's own log in privileged mode (<code>rcb_session_log.jsonl</code>, self-reported). Times count from the agent's first turn. Above them, the trial's replay video, loaded on request; in standard mode a robot row jumps the video to its moment.</p>
     </div>
-    <div class="chips" id="tl-stats"></div>
-    <div class="panel tl-strip-panel">
-      <div class="tl-strip-head small muted"><span>Activity per minute: <i class="sw agent"></i>commands <i class="sw robot"></i>robot actions. Click to jump.</span><span id="tl-strip-range"></span></div>
-      <div class="tl-strip" id="tl-strip" role="group" aria-label="Activity over the trial, per minute"></div>
+    <!-- one flex column, not grid rows: the docked video sticks over the whole timeline, not just its own row -->
+    <div class="tl-stage">
+      <div class="panel tl-video-info">
+        <div class="tl-video-head">
+          <p class="small muted" id="vid-note">The replay video of this trial is further into the job archive.</p>
+          <div class="chips">
+            <button class="btn" type="button" id="vid-load">Load the replay video</button>
+            <a class="btn" id="vid-save" hidden>Save the video</a>
+          </div>
+        </div>
+        <progress id="vid-progress" hidden></progress>
+        <div class="tl-video-markbox" id="vid-marks" hidden></div>
+      </div>
+      <div class="tl-video-box" id="vid-box" hidden>
+        <video id="vid" controls playsinline preload="auto"></video>
+        <div class="tl-video-now small"><span class="tl-video-pos" id="vid-pos"></span><label><input type="checkbox" id="vid-dock" checked> Keep in view while scrolling</label></div>
+      </div>
+      <div class="chips" id="tl-stats"></div>
+      <div class="panel tl-strip-panel">
+        <div class="tl-strip-head small muted"><span>Activity per minute: <i class="sw agent"></i>commands <i class="sw robot"></i>robot actions. Click to jump.</span><span id="tl-strip-range"></span></div>
+        <div class="tl-strip" id="tl-strip" role="group" aria-label="Activity over the trial, per minute"></div>
+      </div>
+      <div class="filters tl-filters">
+        <span class="muted">Show</span>
+        <label><input type="checkbox" data-kind="think" checked> Thinking</label>
+        <label><input type="checkbox" data-kind="say" checked> Messages</label>
+        <label><input type="checkbox" data-kind="tool" checked> Commands</label>
+        <label><input type="checkbox" data-kind="robot" checked> Robot</label>
+        <label><input type="checkbox" data-kind="prompt" checked> Prompts</label>
+        <label for="tl-search">Search <input type="search" id="tl-search" placeholder="text, command or output"></label>
+        <button class="btn" type="button" id="tl-expand">Expand all</button>
+        <span class="small muted" id="tl-count"></span>
+      </div>
+      <div class="tl-list" id="tl-list"><div class="panel empty-state"><span>Reading the job archive from Hugging Face…</span></div></div>
     </div>
-    <div class="filters tl-filters">
-      <span class="muted">Show</span>
-      <label><input type="checkbox" data-kind="think" checked> Thinking</label>
-      <label><input type="checkbox" data-kind="say" checked> Messages</label>
-      <label><input type="checkbox" data-kind="tool" checked> Commands</label>
-      <label><input type="checkbox" data-kind="robot" checked> Robot</label>
-      <label><input type="checkbox" data-kind="prompt" checked> Prompts</label>
-      <label for="tl-search">Search <input type="search" id="tl-search" placeholder="text, command or output"></label>
-      <button class="btn" type="button" id="tl-expand">Expand all</button>
-      <span class="small muted" id="tl-count"></span>
-    </div>
-    <div class="tl-list" id="tl-list"><div class="panel empty-state"><span>Reading the job archive from Hugging Face…</span></div></div>
   </section>
 </main>
 
 <footer class="wrap">
-  <p>Read from the job archive of this trial in the Hugging Face dataset <a id="ds-link" href="https://huggingface.co/datasets/RoboARC/RoboARC-outputs" target="_blank" rel="noopener">RoboARC/RoboARC-outputs</a>, in the browser: only the part of the archive up to the robot's record is downloaded.</p>
+  <p>Read from the job archive of this trial in the Hugging Face dataset <a id="ds-link" href="https://huggingface.co/datasets/RoboARC/RoboARC-outputs" target="_blank" rel="noopener">RoboARC/RoboARC-outputs</a>, in the browser: only the part of the archive up to the robot's record is downloaded, and, when the video is asked for, on to the video.</p>
 </footer>
 <script src="assets/timeline.js" type="module"></script>
 </body>

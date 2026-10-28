@@ -5,7 +5,7 @@
 
 import {
   HF, DEFAULT_DATASET, STATUS_LABEL, $, esc, fmtInt, fmtDur, abs, getJSON, getText, hfResolveIn, hfBlobIn, statusOf,
-  timelineHref, parseManifest, trialsFromIndex, minuteStamp,
+  timelineHref, parseManifest, trialsFromIndex, minuteStamp, encRev, encPath,
 } from "./common.js";
 
 // ---------- reading a job archive in the browser (gzip stream + tar), stopping early ----------
@@ -37,12 +37,16 @@ class ByteQueue {
 }
 
 // Stream <url> (a .tar.gz); onFile(name, bytes) for each regular file want(name, size) accepts; stop(name) true ends the
-// download at that entry. Resolves to the archive bytes unpacked so far.
-export async function untarGz(url, { want, stop = () => false, onFile, onProgress }) {
+// download at that entry; onDownload(bytes, total) as the compressed bytes arrive. Resolves to the archive bytes unpacked
+// so far.
+export async function untarGz(url, { want, stop = () => false, onFile, onProgress, onDownload }) {
   const ctl = new AbortController();
   const res = await fetch(url, { signal: ctl.signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const q = new ByteQueue(res.body.pipeThrough(new DecompressionStream("gzip")).getReader());
+  const total = +res.headers.get("content-length") || null;
+  let got = 0;
+  const body = onDownload ? res.body.pipeThrough(new TransformStream({ transform(c, out) { got += c.length; onDownload(got, total); out.enqueue(c); } })) : res.body;
+  const q = new ByteQueue(body.pipeThrough(new DecompressionStream("gzip")).getReader());
   const dec = new TextDecoder();
   const str = (h, a, b) => dec.decode(h.subarray(a, b)).replace(/\0[\s\S]*$/, "");
   let longName = null, paxPath = null;
@@ -172,16 +176,32 @@ function robotText(e) {
   }
 }
 
-// episode.jsonl (the robot service, standard mode) or rcb_session_log.jsonl (the simulator tooling, privileged mode)
+// episode.jsonl (the robot service, standard mode) or rcb_session_log.jsonl (the simulator tooling, privileged mode).
+// The robot service ends every call with a checkpoint holding the control steps executed since the episode start, so each
+// of its events gets steps = [control steps before its call, after it]: where its motion lies in the replay video.
 export function robotEvents(text, src) {
-  const out = [];
+  const all = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (!e || typeof e.ts !== "number" || e.ev === "call_begin" || e.ev === "call_end") continue;
-    if (e.ev === "checkpoint" && !(e.success || e.done || e.reason)) continue;   // one per call: only a notable one
-    out.push({ type: "robot", t: e.ts, src, ev: e.ev || "?", text: robotText(e), good: e.success === true });
+    try { const e = JSON.parse(line); if (e && typeof e.ts === "number") all.push(e); } catch { /* a torn last line */ }
+  }
+  const after = {};
+  for (const e of all) if (e.ev === "checkpoint" && e.call != null && Number.isFinite(e.control_steps)) after[e.call] = e.control_steps;
+  const out = [];
+  let done = 0;
+  for (const e of all) {
+    if (e.ev === "call_begin" || e.ev === "call_end") continue;
+    let steps = null;
+    if (src === "service") {
+      if ((e.ev === "checkpoint" || e.ev === "end") && Number.isFinite(e.control_steps)) steps = [e.control_steps, e.control_steps];
+      else if (e.call != null && after[e.call] != null) steps = [done, after[e.call]];
+      else if (e.ev === "start") steps = [0, 0];
+    }
+    if (e.ev === "checkpoint") {
+      if (Number.isFinite(e.control_steps)) done = e.control_steps;
+      if (!(e.success || e.done || e.reason)) continue;   // one per call: only a notable one
+    }
+    out.push({ type: "robot", t: e.ts, src, ev: e.ev || "?", text: robotText(e), good: e.success === true, steps });
   }
   return out;
 }
@@ -192,6 +212,7 @@ const P = typeof location === "undefined" ? new URLSearchParams() : new URLSearc
 const T = {
   dataset: P.get("ds") || DEFAULT_DATASET, rev: P.get("rev"), path: P.get("path"), job: P.get("job"), trial: P.get("trial"),
   turns: [], robot: [], events: [], t0: null, traj: null, rows: [], hidden: new Set(), query: "",
+  video: null, motions: [], motionsOf: null, nowRow: null,
 };
 const ROBOT_SRC = { service: "robot service", tooling: "sim tooling, self-reported" };
 
@@ -296,7 +317,9 @@ function hay(e) {
 function rowHtml(e, i) {
   const time = `<div class="tl-time"><a href="#${e.id}" title="${esc(abs(new Date(e.t * 1000).toISOString()))}">${fmtRel(e.t - T.t0)}</a><span>${clock(e.t)}</span></div>`;
   if (e.type === "robot") {
-    return `<div class="tl-row robot${e.good ? " good" : ""}" id="${e.id}" data-i="${i}">${time}<div class="tl-body"><span class="k robot" title="${esc(ROBOT_SRC[e.src])}">${esc(e.src === "service" ? "robot" : "sim")} · ${esc(e.ev)}</span> <span class="robot-text">${esc(e.text)}</span></div></div>`;
+    const vt = rowVideoTime(e);
+    const seek = vt == null ? "" : `<button type="button" class="seek" title="Jump the replay video to this moment">▶ ${fmtVid(vt)}</button>`;
+    return `<div class="tl-row robot${e.good ? " good" : ""}${seek ? " seekable" : ""}" id="${e.id}" data-i="${i}">${time}<div class="tl-body"><span class="k robot" title="${esc(ROBOT_SRC[e.src])}">${esc(e.src === "service" ? "robot" : "sim")} · ${esc(e.ev)}</span> <span class="robot-text">${esc(e.text)}</span>${seek}</div></div>`;
   }
   if (e.type === "prompt") {
     return `<div class="tl-row prompt" id="${e.id}" data-i="${i}">${time}<div class="tl-body"><details class="ev" data-i="${i}"><summary><span class="k">${esc(e.label)}</span> <span class="meta">${kb(e.text)}</span></summary><div class="ev-body"></div></details></div></div>`;
@@ -404,7 +427,244 @@ function jumpTo(t) {
   setTimeout(() => el.classList.remove("flash"), 1600);
 }
 
+// ---------- the replay video ----------
+
+// The video is further into the same job archive: standard mode's artifacts/data/replay.mp4 (the sim service's replay of
+// the live episode in a fresh process), else verifier/replay.mp4 (privileged mode: the verifier's replay of the submitted
+// trajectory). Next to it: its frame map (one line per video frame: the video time and the simulated time it shows) and
+// its recording manifest (the replay's step counts, its forcing and review events).
+const VIDEO_DIRS = ["artifacts/data/", "verifier/"];
+const VIDEO_FILES = { "replay.frame_map.jsonl": "map", "replay.mp4": "mp4", "replay.recording_manifest.json": "manifest" };
+
+const mb = (n) => `${(n / 1048576).toFixed(0)} MB`;
+const pad2 = (x) => String(x).padStart(2, "0");
+function fmtVid(sec) {
+  const s = Math.max(0, Math.floor(sec)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}:${pad2(m)}:${pad2(s % 60)}` : `${m}:${pad2(s % 60)}`;
+}
+const vnote = (html) => { $("#vid-note").innerHTML = html; };
+
+// The frame map's video time and simulated time of every frame; only each line's head is decoded (the rest is camera
+// calibration).
+export function frameTimes(bytes) {
+  const dec = new TextDecoder(), vt = [], sim = [];
+  for (let a = 0; a < bytes.length;) {
+    let b = bytes.indexOf(10, a);
+    if (b < 0) b = bytes.length;
+    const head = dec.decode(bytes.subarray(a, Math.min(b, a + 512)));
+    const v = head.match(/"target_video_time_s":\s*([-+\d.eE]+)/), s = head.match(/"source_sim_time_s":\s*([-+\d.eE]+)/);
+    if (v && s) { vt.push(+v[1]); sim.push(+s[1]); }
+    a = b + 1;
+  }
+  if (!vt.length) return null;
+  let monotonic = true;
+  for (let i = 1; i < sim.length; i++) if (sim[i] < sim[i - 1]) { monotonic = false; break; }
+  return { vt: Float64Array.from(vt), sim: Float64Array.from(sim), monotonic };
+}
+
+// The video time of the last frame showing simulated time <= sim (in an audit video with an invalidated branch, the
+// later branch wins); without a frame map the video runs at simulated speed.
+function videoAt(sim) {
+  const f = T.video.frames;
+  if (!f) return sim;
+  const s = f.sim;
+  if (f.monotonic) {
+    let lo = 0, hi = s.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (s[m] <= sim + 1e-9) lo = m; else hi = m - 1; }
+    return f.vt[lo];
+  }
+  for (let i = s.length - 1; i >= 0; i--) if (s[i] <= sim + 1e-9) return f.vt[i];
+  return 0;
+}
+
+// The simulated time on screen at video time <vt>.
+function simAt(vt) {
+  const f = T.video.frames;
+  if (!f) return vt;
+  let lo = 0, hi = f.vt.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (f.vt[m] <= vt + 1e-6) lo = m; else hi = m - 1; }
+  return f.sim[lo];
+}
+
+// A robot row's place in the video: where its motion starts (null: no video, or a row without control steps).
+function rowVideoTime(e) {
+  if (!T.video?.dtSim || !e.steps) return null;
+  return videoAt(e.steps[0] * T.video.dtSim);
+}
+
+// The robot service's calls that moved the robot, in order: the one on screen during playback.
+function motions() {
+  if (T.motionsOf !== T.robot) {
+    T.motionsOf = T.robot;
+    T.motions = T.robot.filter((e) => e.steps && e.steps[1] > e.steps[0]);
+  }
+  return T.motions;
+}
+
+function seekVideo(vt) {
+  const v = $("#vid");
+  v.currentTime = Math.max(0, vt);
+  if (!$("#vid-box").classList.contains("docked")) $("#vid-box").scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function showRow(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.hidden) { vnote(`${T.video.noteHtml} <b>That row is hidden by the filters or the search.</b>`); return; }
+  el.scrollIntoView({ block: "start", behavior: "smooth" });
+  el.classList.add("flash");
+  setTimeout(() => el.classList.remove("flash"), 1600);
+}
+
+// The position line under the video, and the timeline row of the call on screen.
+function onVideoTime() {
+  const V = T.video, vt = $("#vid").currentTime, sim = simAt(vt);
+  const parts = [`video <b>${fmtVid(vt)}</b>`, `simulated <b>${sim.toFixed(1)} s</b>`];
+  let row = null;
+  if (V.dtSim) {
+    const step = Math.round(sim / V.dtSim), total = V.manifest?.result?.sim_steps;
+    parts.push(`control step <b>${fmtInt(step)}</b>${total ? ` of ${fmtInt(total)}` : ""}`);
+    const ms = motions();
+    let lo = -1, hi = ms.length - 1;      // the last call that started at or before this step
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (ms[m].steps[0] <= step) lo = m; else hi = m - 1; }
+    const e = ms[lo];
+    if (e) {
+      const during = step < e.steps[1];
+      row = e.id;
+      parts.push(`${during ? "during" : "after"} the ${esc(e.ev)} the robot service logged at ${fmtRel(e.t - T.t0)} · <a href="#${e.id}" data-row="${e.id}">show it in the timeline</a>`);
+    }
+  }
+  $("#vid-pos").innerHTML = parts.map((p) => `<span>${p}</span>`).join("");
+  if (row !== T.nowRow) {
+    document.getElementById(T.nowRow)?.classList.remove("now");
+    T.nowRow = row;
+  }
+  document.getElementById(row)?.classList.add("now");     // again after a re-render of the list
+}
+
+function markHtml() {
+  const r = T.video.manifest?.result || {}, dtP = T.video.dtPhys;
+  const at = (ev) => (dtP && Number.isFinite(ev.physics_step) ? ev.physics_step * dtP : T.video.dtSim && Number.isFinite(ev.step) ? ev.step * T.video.dtSim : null);
+  const len = (ev) => (dtP && ev.ticks ? `${(ev.ticks * dtP).toFixed(1)} s` : `${fmtInt(ev.ticks)} ticks`);
+  const marks = [
+    ...(r.forcing?.events || []).map((ev) => ({ cls: "forcing", sim: at(ev), title: JSON.stringify(ev),
+      text: `forcing · ${esc(ev.arm)} ${esc(ev.joint)} at ${Math.round(100 * (ev.fraction ?? 1))}% of its ${esc(ev.cap_nm)} N·m cap for ${len(ev)}: ${esc(ev.pressing)} on ${esc(ev.on)}, up to ${esc(ev.max_force_n)} N` })),
+    ...(r.review?.events || []).map((ev) => ({ cls: "review", sim: at(ev), title: JSON.stringify(ev),
+      text: `deep contact · ${esc((ev.bodies || []).join(" and "))} ${esc(ev.depth_mm)} mm, ${esc(ev.force_n)} N, for ${len(ev)} (${esc(ev.kind)})` })),
+  ].filter((m) => m.sim != null).sort((a, b) => a.sim - b.sim);
+  if (!marks.length) return "";
+  return `<div class="small muted">The replay's forcing events (an arm drive at its torque cap while pressing on something) and review events (a task contact deeper than the contact rule allows), from <code>${esc(T.video.dir)}replay.recording_manifest.json</code>: click one to jump there.</div>
+    <div class="tl-video-marks">${marks.map((m) => `<button type="button" class="mark ${m.cls}" data-vt="${videoAt(m.sim)}" title="${esc(m.title)}"><b>▶ ${fmtVid(videoAt(m.sim))}</b> ${m.text}</button>`).join("")}</div>`;
+}
+
+async function loadVideo() {
+  const btn = $("#vid-load"), bar = $("#vid-progress");
+  btn.disabled = true;
+  bar.hidden = false;
+  bar.removeAttribute("value");
+  const marker = `/${T.job}/${T.trial}/`;
+  const relOf = (name) => { const i = name.indexOf(marker); return i < 0 ? null : name.slice(i + marker.length); };
+  const dirOf = (r) => (r == null ? null : VIDEO_DIRS.find((d) => r.startsWith(d)) || null);
+  const got = {};
+  let inside = false, raf = 0, shown = [0, null];
+  vnote(`<span class="dot live"></span>Downloading the job archive…`);
+  try {
+    await untarGz(hfResolveIn(T.dataset, T.rev, `${T.path}/jobs/${T.job}.tar.gz`), {
+      want: (name, size) => {
+        const r = relOf(name), d = dirOf(r);
+        return !!d && r.slice(d.length) in VIDEO_FILES && !(d !== VIDEO_DIRS[0] && got[VIDEO_DIRS[0]]?.mp4) && size <= (1 << 30);
+      },
+      stop: (name) => {
+        const r = relOf(name);
+        if (r == null) return inside;                       // past this trial's directory
+        inside = true;
+        return VIDEO_DIRS.some((d) => got[d]?.mp4 && r > `${d}replay.recording_manifest.json`);   // sorted by name
+      },
+      onFile: (name, bytes) => {
+        const r = relOf(name), d = dirOf(r), kind = VIDEO_FILES[r.slice(d.length)], g = (got[d] ||= {});
+        if (kind === "map") g.frames = frameTimes(bytes);
+        else if (kind === "mp4") g.mp4 = new Blob([bytes], { type: "video/mp4" });
+        else { try { g.manifest = JSON.parse(new TextDecoder().decode(bytes)); } catch { g.manifest = null; } }
+      },
+      onDownload: (n, total) => {
+        shown = [n, total];
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          const [k, t] = shown;
+          if (t) { bar.max = t; bar.value = k; }
+          vnote(`<span class="dot live"></span>Downloading the job archive up to the video: ${mb(k)}${t ? ` of ${mb(t)}` : ""}…`);
+        });
+      },
+    });
+  } catch (e) {
+    console.error(e);
+    vnote(`<span class="dot err"></span>Could not read the video from the job archive: ${esc(e.message)}.`);
+    btn.disabled = false;
+    return;
+  } finally {
+    cancelAnimationFrame(raf);
+    bar.hidden = true;
+  }
+  const dir = VIDEO_DIRS.find((d) => got[d]?.mp4);
+  if (!dir) {
+    vnote(`<b>This trial's job archive has no replay video</b> (<code>artifacts/data/replay.mp4</code> or <code>verifier/replay.mp4</code>). The protocol expects one for every graded trial; a privileged trial whose agent submitted no trajectory that replays has none.`);
+    return;
+  }
+  const g = got[dir], m = g.manifest || {}, r = m.result || {};
+  T.video = {
+    dir, url: URL.createObjectURL(g.mp4), size: g.mp4.size, frames: g.frames || null, manifest: g.manifest || null,
+    dtSim: r.sim_steps > 0 && r.sim_time_s > 0 ? r.sim_time_s / r.sim_steps : null,
+    dtPhys: r.physics_steps > 0 && r.sim_time_s > 0 ? r.sim_time_s / r.physics_steps : null,
+  };
+  const service = dir === VIDEO_DIRS[0] || T.robot.some((e) => e.src === "service");
+  T.video.noteHtml = [
+    `<code>${esc(dir)}replay.mp4</code>, ${mb(g.mp4.size)}${m.frame_count ? `, ${fmtInt(m.frame_count)} frames at ${esc(m.fps)} fps` : ""}${r.sim_time_s ? `, ${(+r.sim_time_s).toFixed(1)} s simulated` : ""}${r.success != null ? `, replay success ${esc(r.success)}` : ""}.`,
+    dir === VIDEO_DIRS[0] ? "The sim service's replay of the live episode in a fresh process." : "The verifier's replay of the trajectory the agent submitted.",
+    !T.video.dtSim ? "Its recording manifest is missing, so the timeline's rows have no place in it."
+      : service ? "Click a robot row of the timeline to jump the video to the start of its motion."
+      : "In privileged mode the agent built this trajectory offline and submitted it at the end, so the timeline's rows have no moment in the video.",
+    !g.frames ? "Its frame map is missing: video time is taken as simulated time." : "",
+  ].filter(Boolean).join(" ");
+  vnote(T.video.noteHtml);
+  btn.hidden = true;
+  const save = $("#vid-save");
+  save.href = T.video.url;
+  save.download = `${T.trial}-replay.mp4`;
+  save.hidden = false;
+  $("#vid-marks").innerHTML = markHtml();
+  $("#vid-marks").hidden = !$("#vid-marks").innerHTML;
+  const v = $("#vid");
+  v.src = T.video.url;
+  $("#vid-box").hidden = false;
+  v.addEventListener("timeupdate", onVideoTime);
+  v.addEventListener("seeked", onVideoTime);
+  v.addEventListener("loadedmetadata", onVideoTime);
+  setDock();
+  merge();                                                    // the robot rows get their place in the video
+}
+
+// Before loading: what loading the video costs (the archive's size, from the Hugging Face API).
+async function videoIntro() {
+  const base = "The replay video of this trial, rendered while it was replayed for grading, is further into the job archive. A gzip archive cannot be read from the middle, so loading it downloads the archive up to the video: in standard mode nearly all of it.";
+  vnote(base);
+  const list = await getJSON(`${HF}/api/datasets/${T.dataset}/tree/${encRev(T.rev)}/${encPath(`${T.path}/jobs`)}`).catch(() => null);
+  const f = Array.isArray(list) ? list.find((x) => x.path === `${T.path}/jobs/${T.job}.tar.gz`) : null;
+  if (f?.size && !$("#vid-load").disabled) vnote(`${base} The archive is ${mb(f.size)}.`);
+}
+
+function setDock() {
+  const box = $("#vid-box");
+  box.classList.toggle("docked", $("#vid-dock").checked && !box.hidden);
+  document.documentElement.style.setProperty("--dock-h", box.classList.contains("docked") ? `${box.offsetHeight + 8}px` : "0px");
+}
+
 function wire() {
+  $("#vid-load").addEventListener("click", loadVideo);
+  $("#vid-dock").addEventListener("change", setDock);
+  new ResizeObserver(setDock).observe($("#vid-box"));
+  $("#vid-marks").addEventListener("click", (e) => { const b = e.target.closest(".mark"); if (b) seekVideo(+b.dataset.vt); });
+  $("#vid-pos").addEventListener("click", (e) => { const a = e.target.closest("a[data-row]"); if (a) { e.preventDefault(); showRow(a.dataset.row); } });
   document.querySelectorAll(".tl-filters [data-kind]").forEach((cb) => cb.addEventListener("change", () => {
     cb.checked ? T.hidden.delete(cb.dataset.kind) : T.hidden.add(cb.dataset.kind);
     applyFilter();
@@ -424,6 +684,11 @@ function wire() {
   $("#tl-list").addEventListener("click", (e) => {
     const x = e.target.closest(".txt.clamp, .txt.unclamped");
     if (x && !getSelection().toString()) { x.classList.toggle("clamp"); x.classList.toggle("unclamped"); }
+    const row = e.target.closest(".tl-row.seekable");
+    if (row && !e.target.closest("a") && !getSelection().toString()) {
+      const vt = rowVideoTime(T.events[+row.dataset.i]);
+      if (vt != null) seekVideo(vt);
+    }
   });
   $("#tl-strip").addEventListener("click", (e) => { const b = e.target.closest(".tl-bin"); if (b) jumpTo(+b.dataset.t); });
 }
@@ -482,6 +747,7 @@ async function start() {
     return;
   }
   wire();
+  videoIntro();
   const rec = await loadTrialRecord().catch((e) => { status(`<span><span class="dot err"></span>Could not read the delivery: ${esc(e.message)}</span>`); return null; });
   if (rec) { renderHeader(rec.b, rec.t); renderSummary(rec.b, rec.t, rec.detail, rec.others); }
   else renderHeader(null, null);
