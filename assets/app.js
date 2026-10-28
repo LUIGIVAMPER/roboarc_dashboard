@@ -96,8 +96,8 @@ function parseManifest(text) {
   if (h) out.host = { cpu_model: h[1], cpus: +h[2], ram_gb: +h[3] };
   out.gpus = (raw.GPUs || "").split(";").map((s) => s.trim()).filter(Boolean).map((g) => g.split(",").map((x) => x.trim()))
     .filter((p) => p.length >= 3).map((p) => ({ index: p[0], name: p[1], driver: p[2] }));
-  const r = (raw.runner || "").match(/runner (\d+): (\S+) (\S+) effort (\S+), run id (\S+), modes ([^,]+), web search (\w+)(?:, usage gateway (.+))?/);
-  if (r) out.runner = { pid: r[1], agent: r[2], model: r[3], effort: r[4], run_id: r[5], modes: r[6].split(/\s+/), web_search: r[7], usage_gateway: (r[8] || "off").trim() };
+  const r = (raw.runner || "").match(/runner (\d+): (\S+) (\S+) effort (\S+), run id (\S+), modes ([^,]+), web search (\w+)(?:, usage gateway ([^,]+))?(?:, (GPUs [0-9,]+ \(.*\)|GPU scheduling off))?/);
+  if (r) out.runner = { pid: r[1], agent: r[2], model: r[3], effort: r[4], run_id: r[5], modes: r[6].split(/\s+/), web_search: r[7], usage_gateway: (r[8] || "off").trim(), gpu_placement: r[9] || null };
   const t = (raw.trials || "").match(/planned jobs (\S+), trial dirs (\S+), with a verdict (\S+)/);
   if (t) out.trials = { planned_jobs: t[1], trial_dirs: t[2], with_verdict: t[3] };
   const k = (raw.seeds || "").match(/K = (\d+)/);
@@ -468,6 +468,7 @@ function renderHosts() {
           <dt>Modes</dt><dd>${esc((r.modes || []).join(" + ") || "–")}</dd>
           <dt>Web search</dt><dd>${esc(r.web_search || "–")}</dd>
           <dt>Usage gateway</dt><dd>${esc(r.usage_gateway || "–")}</dd>
+          <dt>GPU placement</dt><dd>${esc(r.gpu_placement || "– (a runner without GPU placement: every trial on GPU 0)")}</dd>
         </dl>
         <dl class="kv">
           <dt>Parallelism</dt><dd>${log.lanes ? `${log.lanes} runner(s), concurrency ${log.concurrency_max ?? "–"} per Harbor job` : (b.pending ? "awaiting digest" : "–")}</dd>

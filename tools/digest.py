@@ -163,11 +163,11 @@ def parse_manifest(text):
             gpus.append({"index": parts[0], "name": parts[1], "driver": parts[2]})
     out["gpus"] = gpus
     r = re.search(r"runner (\d+): (\S+) (\S+) effort (\S+), run id (\S+), modes ([^,]+), web search (\w+)"
-                  r"(?:, usage gateway (.+))?", raw.get("runner", ""))
+                  r"(?:, usage gateway ([^,]+))?(?:, (GPUs [0-9,]+ \(.*\)|GPU scheduling off))?", raw.get("runner", ""))
     if r:
         out["runner"] = {"pid": r.group(1), "agent": r.group(2), "model": r.group(3), "effort": r.group(4),
                          "run_id": r.group(5), "modes": r.group(6).split(), "web_search": r.group(7),
-                         "usage_gateway": (r.group(8) or "off").strip()}
+                         "usage_gateway": (r.group(8) or "off").strip(), "gpu_placement": r.group(9)}
     t = re.search(r"planned jobs (\S+), trial dirs (\S+), with a verdict (\S+)", raw.get("trials", ""))
     if t:
         out["trials"] = {"planned_jobs": t.group(1), "trial_dirs": t.group(2), "with_verdict": t.group(3)}
