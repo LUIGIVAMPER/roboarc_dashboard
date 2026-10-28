@@ -164,6 +164,10 @@ pre.share-text {
 .host-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; align-items: baseline; }
 .gpu-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .gpu { font-family: var(--font-display); font-weight: 600; }
+.host .table-wrap { border-radius: 6px; }
+.host .two { align-items: start; }
+.host .table-wrap th { position: static; }
+p.rule { max-width: 70em; }
 
 /* tables */
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }

@@ -27,7 +27,7 @@
     <nav aria-label="Sections">
       <a href="#progress">Progress</a>
       <a href="#setup">Run setup</a>
-      <a href="#machines">Machine types</a>
+      <a href="#hardware-section">Hardware</a>
       <a href="#uploads">Deliveries</a>
       <a href="#errors">Errors and reruns</a>
       <a href="#matrix">Task matrix</a>
@@ -63,17 +63,18 @@
   <section id="setup" aria-labelledby="h-setup">
     <div class="section-head">
       <h2 id="h-setup">Run setup</h2>
-      <p>The MANIFEST.md of each helper's latest delivery: GPUs and driver, CPU and memory, software versions, and the runner's settings and concurrency.</p>
+      <p>The runner settings of the latest delivery of each helper and run (MANIFEST.md and the batch log): harness, model, effort, modes, parallelism, code and images.</p>
     </div>
     <div class="hosts" id="hosts"></div>
   </section>
 
-  <section id="machines" aria-labelledby="h-machines">
+  <section id="hardware-section" aria-labelledby="h-hardware">
     <div class="section-head">
-      <h2 id="h-machines">Machine types</h2>
-      <p>Resources are allocated by the kind of object a task handles. Measured peaks are the memory and GPU memory peaks the grader records for each trial (verifier/reward.json).</p>
+      <h2 id="h-hardware">Hardware</h2>
+      <p>Each machine the deliveries came from: its GPUs, CPU and memory (MANIFEST.md), the most trials it ran at once (the trials' start and end times), and what each trial used (the grader's records).</p>
     </div>
-    <div class="two" id="machine-specs"></div>
+    <p class="small muted rule" id="hardware-rule"></p>
+    <div class="hosts" id="hardware"></div>
   </section>
 
   <section id="uploads" aria-labelledby="h-uploads">

@@ -426,11 +426,13 @@ async function copyShare(btn) {
   setTimeout(() => { btn.textContent = "Copy"; }, 2000);
 }
 
-function latestByHelper() {
+// The latest delivery of each helper and run id (bundles are sorted newest first).
+function latestByRun() {
   const out = {};
   for (const b of S.model.bundles) {
-    if (!out[b.helper]) out[b.helper] = { latest: b, all: [] };
-    out[b.helper].all.push(b);
+    const k = `${b.helper}|${b.run_id || "?"}`;
+    if (!out[k]) out[k] = { latest: b, all: [] };
+    out[k].all.push(b);
   }
   return out;
 }
@@ -442,34 +444,22 @@ function driverTag(drv) {
 }
 
 function renderHosts() {
-  const groups = latestByHelper();
+  const groups = latestByRun();
   const names = Object.keys(groups);
   if (!names.length) {
-    $("#hosts").innerHTML = `<div class="panel empty-state"><b>No delivery yet, so the GPU model and the way the runs are set up are still unknown.</b>
-      <span>After the first delivery this shows its MANIFEST.md: GPU model, count and driver; CPU model, cores and memory; docker, Harbor and image versions; the runner's agent, model, effort, modes, web search and usage gateway; and, from the batch log, the number of parallel runners and the concurrency.</span></div>`;
+    $("#hosts").innerHTML = `<div class="panel empty-state"><b>No delivery yet, so the run settings are still unknown.</b>
+      <span>After the first delivery this shows its MANIFEST.md: the code commit and images, the runner's harness, model, effort, modes, web search and usage gateway, the trials per task, and from the batch log the number of parallel runners and the concurrency. The machines are under Hardware.</span></div>`;
     return;
   }
   $("#hosts").innerHTML = names.map((h) => {
-    const { latest: b, all } = groups[h];
+    const { latest: b } = groups[h];
     const m = b.manifest || {};
     const raw = b.manifest_fields || {};
     const r = m.runner || {};
-    const gpus = m.gpus || [];
-    const gpuNames = Object.entries(gpus.reduce((a, g) => ((a[g.name] = (a[g.name] || 0) + 1), a), {}));
-    const machines = new Set(all.map((x) => `${x.manifest?.host?.cpu_model || "?"} · ${(x.manifest?.gpus || []).map((g) => g.name).join("+") || "?"}`));
     const log = b.log || {};
     return `<article class="panel host">
-      <div class="host-head"><h3>${esc(h)}</h3><span class="small muted">latest delivery ${when(b.uploaded_at)}: <code>${esc(b.batch)}/${esc(b.bundle)}</code>${b.pending ? " (awaiting digest)" : ""}</span></div>
-      <div class="gpu-line">${gpuNames.length ? gpuNames.map(([n, c]) => `<span class="gpu">${c} × ${esc(n)}</span>`).join("") : `<span class="muted">no GPU line in MANIFEST.md</span>`}
-        ${gpus[0] ? `<span class="chip">driver ${esc(gpus[0].driver)}</span>${driverTag(gpus[0].driver)}` : ""}</div>
+      <div class="host-head"><h3>${esc(b.helper)} <span class="muted small">${esc(pairLabel(pairOf(b, null)))}</span></h3><span class="small muted">latest delivery ${when(b.uploaded_at)}: <code>${esc(b.batch)}/${esc(b.bundle)}</code>${b.pending ? " (awaiting digest)" : ""}</span></div>
       <div class="two">
-        <dl class="kv">
-          <dt>CPU</dt><dd>${m.host ? `${esc(m.host.cpu_model)}, ${m.host.cpus} CPUs` : "–"}</dd>
-          <dt>Memory</dt><dd>${m.host ? `${m.host.ram_gb} GB` : "–"}</dd>
-          <dt>Software</dt><dd>${esc(raw.software || "–")}</dd>
-          <dt>Code</dt><dd class="mono">${esc(raw.repo || "–")}</dd>
-          <dt>Images</dt><dd class="mono small">${esc(raw.images || "–").replace(/\n/g, "<br>")}</dd>
-        </dl>
         <dl class="kv">
           <dt>Harness</dt><dd>${esc(r.agent || "–")}</dd>
           <dt>Model</dt><dd>${esc(r.model || "–")}</dd>
@@ -478,47 +468,118 @@ function renderHosts() {
           <dt>Modes</dt><dd>${esc((r.modes || []).join(" + ") || "–")}</dd>
           <dt>Web search</dt><dd>${esc(r.web_search || "–")}</dd>
           <dt>Usage gateway</dt><dd>${esc(r.usage_gateway || "–")}</dd>
+        </dl>
+        <dl class="kv">
           <dt>Parallelism</dt><dd>${log.lanes ? `${log.lanes} runner(s), concurrency ${log.concurrency_max ?? "–"} per Harbor job` : (b.pending ? "awaiting digest" : "–")}</dd>
           <dt>Trials per task</dt><dd>${m.K ? `K = ${m.K}` : "–"}</dd>
           <dt>This batch</dt><dd>${m.trials ? `${esc(m.trials.planned_jobs)} jobs planned, ${esc(m.trials.trial_dirs)} trial dirs, ${esc(m.trials.with_verdict)} with a verdict` : "–"}</dd>
+          <dt>Code</dt><dd class="mono">${esc(raw.repo || "–")}</dd>
+          <dt>Images</dt><dd class="mono small">${esc(raw.images || "–").replace(/\n/g, "<br>")}</dd>
         </dl>
       </div>
       ${raw.notes && raw.notes !== "none" ? `<div class="small"><b>Helper's notes: </b>${esc(raw.notes)}</div>` : ""}
-      ${machines.size > 1 ? `<div class="small muted">This helper used ${machines.size} machines: ${[...machines].map(esc).join("; ")}</div>` : ""}
     </article>`;
   }).join("");
 }
 
-function machineClass(task) { return task.material === "rigid" ? "shared" : "exclusive"; }
+// The allocation rule per trial: rigid tasks share a GPU four ways, deformable tasks have one each.
+const RULE = { rigid: { gpu: 0.25, cpu: 2, mem: 4 }, deformable: { gpu: 1, cpu: 4, mem: 8 } };
 
-function renderMachines() {
-  const SPEC = {
-    shared: { title: "Rigid tasks", rule: "4 trials share one GPU; each trial gets at least 2 CPU cores + 4 GB memory" },
-    exclusive: { title: "Deformable tasks (rope, cloth, cable, fiber)", rule: "each trial has a GPU to itself; each trial gets at least 4 CPU cores + 8 GB memory" },
-  };
-  const K = S.model.K;
-  const trialsBy = { shared: [], exclusive: [] };
+function machineOf(b) {
+  const m = b.manifest || {}, host = m.host || {}, gpus = m.gpus || [];
+  const label = Object.entries(gpus.reduce((a, g) => ((a[g.name] = (a[g.name] || 0) + 1), a), {})).map(([n, c]) => `${c} × ${n}`).join(" + ");
+  return { key: [b.helper, host.cpu_model, host.cpus, host.ram_gb, label].join("|"), helper: b.helper, host: m.host, gpus, label,
+    software: b.manifest_fields?.software };
+}
+
+// The most trials that ran at once (from their start and end times), by kind, and the GPU, CPU and memory the rule asks
+// for at that moment.
+function peakLoad(ts, kindOf) {
+  const ev = [];
+  for (const t of ts) {
+    const k = kindOf(t.base);
+    if (k) ev.push([Date.parse(t.started_at), 1, k], [Date.parse(t.finished_at), -1, k]);
+  }
+  if (!ev.length) return null;
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);   // an end before a start at the same instant
+  const n = { rigid: 0, deformable: 0 };
+  const peak = { total: 0, rigid: 0, deformable: 0, gpu: 0, cpu: 0, mem: 0, at: null };
+  for (const [time, d, k] of ev) {
+    n[k] += d;
+    const r = n.rigid, f = n.deformable;
+    if (r + f > peak.total) { peak.total = r + f; peak.at = time; peak.mix = { rigid: r, deformable: f }; }
+    peak.rigid = Math.max(peak.rigid, r); peak.deformable = Math.max(peak.deformable, f);
+    peak.gpu = Math.max(peak.gpu, r * RULE.rigid.gpu + f * RULE.deformable.gpu);
+    peak.cpu = Math.max(peak.cpu, r * RULE.rigid.cpu + f * RULE.deformable.cpu);
+    peak.mem = Math.max(peak.mem, r * RULE.rigid.mem + f * RULE.deformable.mem);
+  }
+  return peak;
+}
+
+function renderHardware() {
   const taskBy = Object.fromEntries(S.tasks.tasks.map((t) => [t.base, t]));
-  for (const t of S.model.trials) { const task = taskBy[t.base]; if (task) trialsBy[machineClass(task)].push(t); }
-  $("#machine-specs").innerHTML = Object.entries(SPEC).map(([cls, spec]) => {
-    const tasks = S.tasks.tasks.filter((t) => machineClass(t) === cls);
-    const fams = [...new Set(tasks.map((t) => t.family_name))];
-    const caps = Object.entries(tasks.reduce((a, t) => { const k = `${t.cpus} CPU / ${Math.round(t.memory_mb / 1024)} GB`; a[k] = (a[k] || 0) + 1; return a; }, {}))
+  const kindOf = (base) => taskBy[base]?.material;
+  const deformable = [...new Set(S.tasks.tasks.filter((t) => t.material === "deformable").map((t) => t.family_name))].join(", ");
+  $("#hardware-rule").innerHTML = `Allocation rule: rigid tasks share a GPU four ways and get at least 2 CPU cores and 4 GB memory per trial; deformable tasks (${esc(deformable)}) get a GPU each and at least 4 CPU cores and 8 GB memory per trial. “Needed at peak” applies the rule to the most trials that ran at once on the machine.`;
+  const machines = {};
+  for (const b of S.model.bundles) {
+    const m = machineOf(b);
+    (machines[m.key] ||= { ...m, bundles: [] }).bundles.push(b);
+  }
+  const list = Object.values(machines);
+  if (!list.length) {
+    $("#hardware").innerHTML = `<div class="panel empty-state"><b>No delivery yet, so the hardware is still unknown.</b>
+      <span>After the first delivery each machine shows its GPUs and driver, CPU, memory and software (MANIFEST.md); the most trials it ran at once and whether that load fits the allocation rule (the trials' start and end times); and the memory and GPU memory each trial used, its OOM kills and its container caps (the grader's records).</span></div>`;
+    return;
+  }
+  $("#hardware").innerHTML = list.map((mc) => {
+    const keys = new Set(mc.bundles.map((b) => b.key));
+    const ts = S.model.trials.filter((t) => keys.has(t.bundle));
+    const timed = ts.filter((t) => t.started_at && t.finished_at);
+    const peak = peakLoad(timed, kindOf);
+    const host = mc.host || {};
+    const first = timed.length ? Math.min(...timed.map((t) => Date.parse(t.started_at))) : null;
+    const last = timed.length ? Math.max(...timed.map((t) => Date.parse(t.finished_at))) : null;
+    const check = (label, need, have, unit = "") => {
+      if (need == null || !have) return `<tr><td>${label}</td><td class="mono">${need == null ? "–" : need + unit}</td><td class="mono">${have ? have + unit : "–"}</td><td></td></tr>`;
+      const ok = need <= have;
+      return `<tr><td>${label}</td><td class="mono">${+need.toFixed(2)}${unit}</td><td class="mono">${have}${unit}</td><td><span class="pill ${ok ? "ok" : "fail"}">${ok ? "fits" : "over"}</span></td></tr>`;
+    };
+    const usage = ["rigid", "deformable"].map((k) => {
+      const kt = ts.filter((t) => kindOf(t.base) === k);
+      const mem = kt.map((t) => t.peak_memory_gb).filter((x) => typeof x === "number");
+      const gpu = kt.map((t) => t.peak_gpu_memory_gb).filter((x) => typeof x === "number");
+      const oom = kt.reduce((a, t) => a + (t.oom_kills || 0), 0);
+      const f = (xs) => (xs.length ? `${median(xs).toFixed(1)} / ${Math.max(...xs).toFixed(1)} GB` : "–");
+      const over = mem.filter((x) => x > RULE[k].mem).length;
+      return `<tr><td>${k === "rigid" ? "Rigid" : "Deformable"}</td><td class="mono">${kt.length}</td><td class="mono">${f(mem)}${over ? ` <span class="tag warn" title="trials whose memory peak is above the rule's ${RULE[k].mem} GB">${over} above ${RULE[k].mem} GB</span>` : ""}</td>
+        <td class="mono">${f(gpu)}</td><td class="mono">${oom ? `<span class="tag bad">${oom}</span>` : (mem.length ? "0" : "–")}</td></tr>`;
+    }).join("");
+    const caps = Object.entries(ts.reduce((a, t) => { if (t.cap_cpus != null) { const k = `${t.cap_cpus} CPU / ${t.cap_memory_gb} GB`; a[k] = (a[k] || 0) + 1; } return a; }, {}))
       .sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip">${esc(k)} × ${n}</span>`).join("");
-    const ts = trialsBy[cls];
-    const peak = (f) => { const v = ts.map((t) => t[f]).filter((x) => typeof x === "number"); return v.length ? Math.max(...v) : null; };
-    const pm = peak("peak_memory_gb"), pg = peak("peak_gpu_memory_gb");
-    const ooms = ts.reduce((a, t) => a + (t.oom_kills || 0), 0);
-    const measured = ts.filter((t) => typeof t.peak_memory_gb === "number").length;
-    return `<article class="panel spec">
-      <div class="big">${spec.title}</div>
-      <div>${esc(spec.rule)}</div>
-      <dl class="kv">
-        <dt>Bases</dt><dd>${tasks.length}, ${tasks.length * MODES.length * K} trials per pair</dd>
-        <dt>Families</dt><dd><div class="chips">${fams.map((f) => `<span class="chip">${esc(f)}</span>`).join("")}</div></dd>
-        <dt>task.toml caps</dt><dd><div class="chips">${caps}</div><div class="small faint">Upper limits for the container (throttled or killed above them), not reservations.</div></dd>
-        <dt>Measured peaks</dt><dd>${measured ? `memory up to ${pm?.toFixed(1)} GB, GPU memory up to ${pg?.toFixed(1) ?? "–"} GB (${measured} trials recorded)${ooms ? `; <span class="tag bad">${ooms} OOM or emergency kills</span>` : ""}` : `<span class="faint">no digested trials yet</span>`}</dd>
-      </dl>
+    const enforced = ts.filter((t) => t.limits_enforced != null);
+    const nEnf = enforced.filter((t) => t.limits_enforced).length;
+    return `<article class="panel host">
+      <div class="host-head"><h3>${esc(mc.helper)} <span class="muted small">${esc(host.cpu_model || "unknown CPU")}</span></h3>
+        <span class="small muted">${mc.bundles.length} ${mc.bundles.length === 1 ? "delivery" : "deliveries"}, ${ts.length} trials${first ? `, ${fmtDate(first)} → ${fmtDate(last)}` : ""}</span></div>
+      <div class="gpu-line">${mc.gpus.length ? `<span class="gpu">${esc(mc.label)}</span><span class="chip">driver ${esc(mc.gpus[0].driver)}</span>${driverTag(mc.gpus[0].driver)}` : `<span class="muted">no GPU line in MANIFEST.md</span>`}</div>
+      <div class="two">
+        <dl class="kv">
+          <dt>CPU</dt><dd>${host.cpus ? `${host.cpus} cores` : "–"}${host.cpu_model ? `, ${esc(host.cpu_model)}` : ""}</dd>
+          <dt>Memory</dt><dd>${host.ram_gb ? `${host.ram_gb} GB` : "–"}</dd>
+          <dt>Software</dt><dd>${esc(mc.software || "–")}</dd>
+          <dt>Most at once</dt><dd>${peak ? `${peak.total} trials (${peak.mix.rigid} rigid + ${peak.mix.deformable} deformable) on ${esc(abs(new Date(peak.at).toISOString()))}; at most ${peak.rigid} rigid and ${peak.deformable} deformable at once` : `<span class="faint">${mc.bundles.some((b) => b.pending) ? "awaiting digest" : "no timed trials"}</span>`}</dd>
+          <dt>Container caps</dt><dd>${caps ? `<div class="chips">${caps}</div><div class="small faint">${enforced.length ? `enforced in ${nEnf} of ${enforced.length} trials` : ""}</div>` : "–"}</dd>
+        </dl>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Needed at peak</th><th>By the rule</th><th>Machine has</th><th></th></tr></thead>
+          <tbody>${check("GPUs", peak?.gpu ?? null, mc.gpus.length)}${check("CPU cores", peak?.cpu ?? null, host.cpus)}${check("Memory", peak?.mem ?? null, host.ram_gb, " GB")}</tbody>
+        </table></div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Per trial (grader record)</th><th>Trials</th><th>Memory peak, median / max</th><th>GPU memory peak, median / max</th><th>OOM kills</th></tr></thead>
+        <tbody>${usage}</tbody>
+      </table></div>
     </article>`;
   }).join("");
 }
@@ -680,7 +741,7 @@ function render() {
   renderCards();
   renderShare();
   renderHosts();
-  renderMachines();
+  renderHardware();
   renderBundles();
   renderErrors();
   renderMatrix();

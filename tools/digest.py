@@ -254,6 +254,8 @@ def digest_job(src, rev, path, job, jobs_dir):
         exc = res.get("exception_info") or {}
         rw = load_json(fs.get("verifier/reward.json", b"null")) or {}
         ar = res.get("agent_result") or {}
+        lim = load_json(fs.get("verifier/resource_limits.json", b"null")) or {}
+        cap = ((lim.get("limits") or {}).get("caps") or {}).get("main") or {}
         wall = None
         try:
             a = dt.datetime.fromisoformat(res["started_at"].replace("Z", "+00:00"))
@@ -271,6 +273,8 @@ def digest_job(src, rev, path, job, jobs_dir):
             "oom_kills": sum(rw.get(k) or 0 for k in ("resource_oom_kills", "resource_host_oom_kills",
                                                        "resource_service_oom_kills", "resource_emergency_kills")) if rw else None,
             "tokens_in": ar.get("n_input_tokens"), "tokens_out": ar.get("n_output_tokens"), "cost_usd": ar.get("cost_usd"),
+            # the container caps the trial ran under (the task's, clamped to the host) and whether they were enforced
+            "cap_cpus": cap.get("cpus"), "cap_memory_gb": cap.get("memory_gb"), "limits_enforced": lim.get("enforced"),
             "detail": {
                 "exception_message": (exc.get("exception_message") or "")[:4000] or None,
                 "exception_tail": tail(fs["exception.txt"]) if "exception.txt" in fs else None,
