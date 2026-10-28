@@ -291,6 +291,7 @@ function renderSummary(b, t, detail, others) {
     ["Result", `<span class="pill ${st}">${STATUS_LABEL[st]}</span>${t.result_source === "index" ? ` <span class="small muted">(${b.pending ? (b.layout === "loose" ? "the delivery is not digested yet" : "from index.json: the delivery is not digested yet") : b.layout === "loose" ? "from verifier/reward.json" : "from index.json only"})</span>` : ""}`],
     ["Reward", esc(t.reward ?? "–")], ["Reason", esc(t.reason || "–")],
     ["Harbor exception", esc(t.exception_type || (t.exception ? "yes (awaiting digest)" : "none"))],
+    ["Reasoning effort", t.effort_source ? `${t.effort ? esc(t.effort) : "not set: the harness's or the provider's default level, which no record names"} <span class="small muted">(from the ${esc(t.effort_source)})</span>` : "–"],
     ["Wall time", fmtDur(t.wall_s)],
     ["Tokens (in / cached / out)", `${fmtInt(tokIn)} / ${fmtInt(cached)} / ${fmtInt(tokOut)}`],
     ["Cost", t.cost_usd != null ? `$${Number(t.cost_usd).toFixed(2)}` : "–"],

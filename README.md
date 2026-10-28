@@ -38,6 +38,11 @@ reruns with their logs, a per-task matrix and the first frames.
   the runner's `placement.json` (the GPUs it used, the host's CPU count) and the resource monitor's first sample (the
   memory of the GPU a trial ran on) recorded. The card says which, and names each field the delivery did not record.
   Each trial's GPU (index, model, memory) is on its timeline page.
+- Reasoning effort: the effort each trial ran with, from Codex's session log (`agent/sessions/.../rollout-*.jsonl`, its
+  first `turn_context`: the effort Codex sent, its `config.toml` included), else the effort Harbor passed the harness
+  (`reasoning_effort` in the job's `config.json`; Claude Code's log names none). The runner's `EFFORT` is the run id's;
+  `default` passes none, and when the harness's config sets none either the page says "not set": the model ran at the
+  harness's or the provider's default level, which no record names.
 - Run time: each trial's wall time is Harbor's `started_at` to `finished_at`. A pair's estimated total time is
   elapsed + work left / parallelism, where elapsed runs from its first trial's start to its last trial's end, the
   work left is the expected wall time of every trial without a result (the median of the same pair and base, else of

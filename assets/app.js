@@ -385,7 +385,7 @@ function renderHosts() {
         <dl class="kv">
           <dt>Harness</dt><dd>${esc(r.agent || "–")}</dd>
           <dt>Model</dt><dd>${esc(r.model || "–")}</dd>
-          <dt>Effort</dt><dd>${esc(r.effort || "–")}</dd>
+          <dt>Effort</dt><dd>${effortAsRun(b)}</dd>
           <dt>Run id</dt><dd class="mono">${esc(b.run_id || r.run_id || "–")}</dd>
           <dt>Modes</dt><dd>${esc((r.modes || []).join(" + ") || "–")}</dd>
           <dt>Web search</dt><dd>${esc(r.web_search || "–")}</dd>
@@ -529,6 +529,19 @@ function renderHardware() {
 function deliveryTags(b) {
   return (b.layout === "loose" ? ` <span class="tag" title="the runner's jobs/ and results/ folders as loose files, without send_results.sh: no MANIFEST.md, so the code commit, the images and the machine are unknown">loose files</span>` : "")
     + (b.official === false ? ` <span class="tag warn" title="${esc(b.redaction?.notice || "REDACTION.json: \"official\": false")}">unofficial: not counted</span>` : "");
+}
+
+// The reasoning effort the trials ran with (tools/digest.py): Codex's session log names it, its config.toml included;
+// for another harness, the effort Harbor passed it (the job's config.json). The runner's EFFORT is the run id's.
+const EFFORT_UNSET = "No reasoning effort was set: not by the runner (EFFORT=default) and not in the harness's config. "
+  + "The model ran at the harness's or the provider's default level, which no record names.";
+function effortAsRun(b) {
+  const r = b.manifest?.runner || {};
+  const runs = b.effort_as_run || [];
+  if (!runs.length) return `${esc(r.effort || "–")}${r.effort ? ` <span class="small muted">(the runner's EFFORT${b.pending ? "; as run: awaiting digest" : ""})</span>` : ""}`;
+  return runs.map((x) => `${x.effort ? esc(x.effort) : `<span class="tag warn" title="${esc(EFFORT_UNSET)}">not set: the model's default</span>`}`
+    + `${runs.length > 1 ? ` (${x.trials} trial${x.trials > 1 ? "s" : ""})` : ""} <span class="small muted">from the ${esc(x.source)}</span>`).join("<br>")
+    + (r.effort && runs.some((x) => (x.effort || "default") !== r.effort) ? ` <span class="small muted">· the runner's EFFORT: ${esc(r.effort)}</span>` : "");
 }
 
 function pairLabel(id) {
@@ -728,6 +741,7 @@ async function openBundle(key) {
   if (b.errors?.length) html += `<div><h4>Digest problems</h4>${pre(b.errors)}</div>`;
   html += `<div><h4>Run settings</h4><dl class="kv">
     <dt>Pair</dt><dd>${esc(pairLabel(pairOf(b, null)))}</dd><dt>Run id</dt><dd class="mono">${esc(b.run_id || "–")}</dd>
+    <dt>Effort</dt><dd>${effortAsRun(b)}</dd>
     <dt>Trials</dt><dd>${b.trials} (${b.jobs} jobs)</dd>
     ${b.log ? `<dt>Batch log</dt><dd>${esc(b.log.first || "")} → ${esc(b.log.last || "")}, ${b.log.lanes} runner(s), concurrency ${b.log.concurrency_max ?? "–"}</dd>` : ""}
     ${Object.entries(raw).filter(([k]) => ["notes", "mirror", "results"].includes(k)).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}

@@ -39,11 +39,16 @@ SMALL = 4 << 20          # read members up to this size; bigger ones (videos, tr
 TAIL = 60                # lines kept from the end of a log
 LINE = 400               # characters kept per line
 SAMPLES = "artifacts/var/rcb-monitor/samples.jsonl"   # the resource monitor's samples: the first names the trial's GPU memory
+# Codex's session log (agent/sessions/<date>/rollout-*.jsonl): its first turn_context line, after the instructions
+# (some 80 KB in), names the reasoning effort Codex ran with. Only the start is read, of any size.
+CODEX_SESSION = re.compile(r"agent/sessions/(?:[^/]+/)*rollout-[^/]+\.jsonl")
+SESSION_HEAD = 1 << 20
 # A bundle digested by an older version of this script is digested again. 2: the official per-trial results
 # (results/<batch>/.../config.json) are matched to their trial by its directory, not by its trial number. 3: the
 # batch log's "start" lines of the current runner ("(concurrency N; trial ...)") give the concurrency; loose deliveries.
-# 4: the machine from the batch log's host lines, the jobs' host.json or placement.json; each trial's GPU.
-DIGEST_VERSION = 4
+# 4: the machine from the batch log's host lines, the jobs' host.json or placement.json; each trial's GPU. 5: each
+# trial's reasoning effort as run (the Codex session log, else the effort the job's config.json passed to the harness).
+DIGEST_VERSION = 5
 
 
 def now():
@@ -248,20 +253,25 @@ def parse_batch_log(text):
 
 
 def read_tar(fobj, want):
-    """Stream a .tar.gz; call want(path, size) -> bool for each regular file and return {path: bytes} of those wanted."""
+    """Stream a .tar.gz; call want(path, size) for each regular file: True keeps the file (up to SMALL), a number of bytes
+    keeps its start. Returns {path: bytes} of those kept."""
     got = {}
     with tarfile.open(fileobj=fobj, mode="r|gz") as tf:
         for m in tf:
-            if m.isfile() and m.size <= SMALL and want(m.name, m.size):
+            w = want(m.name, m.size) if m.isfile() else False
+            if w is True and m.size <= SMALL:
                 got[m.name] = tf.extractfile(m).read()
+            elif w and w is not True:
+                got[m.name] = tf.extractfile(m).read(w)
     return got
 
 
 JOB_FILES = ("result.json", "exception.txt", "trial.log", "verifier/reward.json", "verifier/verdict.json",
              "verifier/resource_limits.json", "verifier/grade.log", "verifier/reward.txt", "gateway/totals.json",
              SAMPLES)
-# a job folder's own records: its seeds, the runner's GPU and reservation, the machine (host_info.py, runners since 10-28)
-JOB_LEVEL = ("seed.json", "placement.json", "host.json")
+# a job folder's own records: its seeds, the runner's GPU and reservation, the machine (host_info.py, runners since 10-28),
+# Harbor's job configuration (the agent's options)
+JOB_LEVEL = ("seed.json", "placement.json", "host.json", "config.json")
 
 
 def digest_job(src, rev, path, job, jobs_dir):
@@ -275,7 +285,10 @@ def digest_job(src, rev, path, job, jobs_dir):
         if name == f"{jobs_dir}/.seeds/{job}.json" or name in (pre + f for f in JOB_LEVEL):
             return True
         rest = name[len(pre):] if name.startswith(pre) else None
-        return bool(rest) and rest.count("/") >= 1 and rest.split("/", 1)[1] in JOB_FILES
+        if not rest or "/" not in rest:
+            return False
+        rel = rest.split("/", 1)[1]
+        return rel in JOB_FILES or (SESSION_HEAD if CODEX_SESSION.fullmatch(rel) else False)
 
     try:
         files = read_tar(f, want)
@@ -289,12 +302,24 @@ def digest_job(src, rev, path, job, jobs_dir):
 def digest_job_loose(src, rev, path, job, listing):
     """The same records, read file by file from a loose delivery's jobs/<job>/ (listing: the delivery's files)."""
     pre = f"jobs/{job}/"
-    names = [n for n, size in listing.items() if (size <= SMALL or n.endswith("/" + SAMPLES)) and (
-        n in (pre + f for f in JOB_LEVEL) or n == f"jobs/.seeds/{job}.json"
-        or (n.startswith(pre) and n[len(pre):].count("/") >= 1 and n[len(pre):].split("/", 1)[1] in JOB_FILES))]
-    with ThreadPoolExecutor(8) as ex:   # of the samples only the first line is read
-        data = list(ex.map(lambda n: src.read(rev, f"{path}/{n}", head=8192 if n.endswith("/" + SAMPLES) else None), names))
+    rel = lambda n: n[len(pre):].split("/", 1)[1] if n.startswith(pre) and "/" in n[len(pre):] else None
+    session = lambda n: bool(rel(n) and CODEX_SESSION.fullmatch(rel(n)))
+    names = [n for n, size in listing.items() if (size <= SMALL or n.endswith("/" + SAMPLES) or session(n)) and (
+        n in (pre + f for f in JOB_LEVEL) or n == f"jobs/.seeds/{job}.json" or rel(n) in JOB_FILES or session(n))]
+    with ThreadPoolExecutor(8) as ex:   # of the samples only the first line is read, of a session log its start
+        data = list(ex.map(lambda n: src.read(rev, f"{path}/{n}", head=8192 if n.endswith("/" + SAMPLES)
+                                              else SESSION_HEAD if session(n) else None), names))
     return job_records({n: d for n, d in zip(names, data) if d is not None}, pre, f"jobs/.seeds/{job}.json")
+
+
+def codex_turn_context(data):
+    """The first turn_context record of a Codex session log (the start of it: its last line may be cut off), or None."""
+    for line in data.split(b"\n"):
+        if b'"turn_context"' in line:
+            e = load_json(line)
+            if isinstance(e, dict) and e.get("type") == "turn_context":
+                return e.get("payload") or {}
+    return None
 
 
 def job_records(files, pre, seed_name):
@@ -302,6 +327,9 @@ def job_records(files, pre, seed_name):
     seed = load_json(files.get(pre + "seed.json") or files.get(seed_name) or b"null")
     place = load_json(files.get(pre + "placement.json") or b"null") or {}
     host = load_json(files.get(pre + "host.json") or b"null") or {}
+    cfg = load_json(files.get(pre + "config.json") or b"null") or {}
+    agents = cfg.get("agents") if isinstance(cfg.get("agents"), list) else []
+    given = ((agents[0] if agents else {}).get("kwargs") or {}).get("reasoning_effort")   # what Harbor passed (--ak)
     trials = {}
     for name, data in files.items():
         rest = name[len(pre):] if name.startswith(pre) else ""
@@ -321,6 +349,12 @@ def job_records(files, pre, seed_name):
         first = load_json((fs.get(SAMPLES) or b"").split(b"\n", 1)[0] or b"null") or {}
         cards = first.get("cards") if isinstance(first.get("cards"), dict) else {}
         gpu = next((g for g in host.get("gpus") or [] if g.get("index") == place.get("gpu")), {})
+        # the reasoning effort as run: Codex's session log names it (its config.toml included); other harnesses record
+        # none, so the effort Harbor passed them. None from a record = not set: the harness's or the provider's default.
+        session = sorted(r for r in fs if CODEX_SESSION.fullmatch(r))
+        ctx = codex_turn_context(fs[session[0]]) if session else None
+        effort, effort_source = ((ctx.get("effort"), "Codex session log") if ctx is not None
+                                 else (given, "job config.json") if agents else (None, None))
         wall = None
         try:
             a = dt.datetime.fromisoformat(res["started_at"].replace("Z", "+00:00"))
@@ -340,7 +374,7 @@ def job_records(files, pre, seed_name):
             "tokens_in": ar.get("n_input_tokens"), "tokens_out": ar.get("n_output_tokens"), "cost_usd": ar.get("cost_usd"),
             # the container caps the trial ran under (the task's, clamped to the host) and whether they were enforced
             "cap_cpus": cap.get("cpus"), "cap_memory_gb": cap.get("memory_gb"), "limits_enforced": lim.get("enforced"),
-            "gpu": place.get("gpu"), "gpu_name": gpu.get("name"),
+            "gpu": place.get("gpu"), "gpu_name": gpu.get("name"), "effort": effort, "effort_source": effort_source,
             "gpu_memory_mib": gpu.get("memory_mib") or (list(cards.values())[0][1] if len(cards) == 1 else None),
             "detail": {
                 "exception_message": (exc.get("exception_message") or "")[:4000] or None,
@@ -538,6 +572,10 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
                 detail[f"{j['job']}/{t['trial_dir']}"] = d["detail"]
 
     hw_source = machine(man, (log or {}).get("hardware") or {}, jobs_info, trials)
+    as_run = {}   # (effort, its record) -> trials
+    for t in trials:
+        if t.get("effort_source"):
+            as_run[(t["effort"], t["effort_source"])] = as_run.get((t["effort"], t["effort_source"]), 0) + 1
     for t in trials:   # each trial's GPU by its index, when only the batch log names the models
         gpu = next((x for x in man.get("gpus") or [] if x["index"] == t.get("gpu")), None)
         if gpu and not t.get("gpu_name"):
@@ -552,6 +590,7 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
         "plan": {"jobs": len(plan.get("jobs", [])), "K": plan.get("trials"), "run_id": plan.get("run_id")} if plan else None,
         "log": {k: v for k, v in (log or {}).items() if k not in ("jobs", "notable", "pids", "runner", "hardware")} or None,
         "jobs": len(g["jobs"]), "trials": len(trials), "errors": errors,
+        "effort_as_run": [{"effort": e, "source": s, "trials": n} for (e, s), n in sorted(as_run.items(), key=str)] or None,
         "detail_file": f"data/bundles/{key}.json", "digested_at": now(), "digest_version": DIGEST_VERSION,
     }
     det = {"key": key, "manifest_text": g["manifest_text"], "summary_md": g["summary"],
