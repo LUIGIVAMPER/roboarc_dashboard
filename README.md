@@ -17,6 +17,10 @@ reruns with their logs, a per-task matrix and the first frames.
 - `.github/workflows/digest.yml` runs the digest every 30 minutes, commits `data/` when it changed and publishes the
   site to GitHub Pages.
 - Opening a trial can also download its job archive from Hugging Face and unpack it in the browser (full logs).
+- Run time: each trial's wall time is Harbor's `started_at` to `finished_at`. A pair's estimated total time is
+  elapsed + work left / parallelism, where elapsed runs from its first trial's start to its last trial's end, the
+  work left is the expected wall time of every trial without a result (the median of the same pair and base, else of
+  the base, the family, the pair, all trials), and parallelism is the summed wall time of its trials over elapsed.
 
 The delivery format is RoboARC's `scripts/send_results.sh`: `<helper>/<batch>/<bundle id>/` with `MANIFEST.md`,
 `index.json`, `SHA256SUMS`, `INVENTORY.tsv`, `batch.tar.gz` and `jobs/<job>.tar.gz`.

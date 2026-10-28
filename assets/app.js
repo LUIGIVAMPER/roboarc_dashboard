@@ -23,6 +23,19 @@ const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmtInt = (n) => (n == null ? "–" : Number(n).toLocaleString("en-US"));
 const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : "–");
+const median = (xs) => {
+  if (!xs || !xs.length) return null;
+  const a = [...xs].sort((x, y) => x - y), m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+function fmtDur(sec) {
+  if (sec == null || !Number.isFinite(sec)) return "–";
+  if (sec < 3600) return `${Math.round(sec / 60)} min`;
+  if (sec < 48 * 3600) return `${(sec / 3600).toFixed(1)} h`;
+  return `${(sec / 86400).toFixed(1)} days`;
+}
+const fmtDays = (sec) => (sec == null || !Number.isFinite(sec) ? "–" : `${(sec / 86400).toFixed(1)} d`);
+const fmtDate = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const minuteStamp = () => Math.floor(Date.now() / 60000);
 
 function rel(iso) {
@@ -229,6 +242,46 @@ function buildModel() {
     eff[key] = { attempts: ts, final: counted.length ? counted[counted.length - 1] : ts[ts.length - 1] };
   }
 
+  // run time: each trial's wall time (Harbor's started_at -> finished_at), and the time left at the current pace
+  const famOf = Object.fromEntries(S.tasks.tasks.map((t) => [t.base, t.family]));
+  const timed = trials.filter((t) => typeof t.wall_s === "number" && t.started_at && t.finished_at);
+  const durs = { pb: {}, b: {}, f: {}, p: {}, all: [] };   // wall times of trials with a result, by pair+base, base, family, pair
+  for (const t of timed) {
+    if (t.status !== "ok" && t.status !== "fail") continue;
+    (durs.pb[`${t.pair}|${t.base}`] ||= []).push(t.wall_s);
+    (durs.b[t.base] ||= []).push(t.wall_s);
+    (durs.f[famOf[t.base]] ||= []).push(t.wall_s);
+    (durs.p[t.pair] ||= []).push(t.wall_s);
+    durs.all.push(t.wall_s);
+  }
+  const memo = new Map();
+  const med = (key, xs) => { if (!memo.has(key)) memo.set(key, median(xs)); return memo.get(key); };
+  const expected = (pair, base) => med(`pb|${pair}|${base}`, durs.pb[`${pair}|${base}`]) ?? med(`b|${base}`, durs.b[base])
+    ?? med(`f|${famOf[base]}`, durs.f[famOf[base]]) ?? med(`p|${pair}`, durs.p[pair]) ?? med("all", durs.all);
+  // pace of a set of trials: busy time (sum of wall times) over the span from the first start to the last end
+  const pace = (ts) => {
+    if (!ts.length) return null;
+    const a = Math.min(...ts.map((t) => Date.parse(t.started_at))), b = Math.max(...ts.map((t) => Date.parse(t.finished_at)));
+    const busy = ts.reduce((x, t) => x + t.wall_s, 0), span = (b - a) / 1000;
+    return span > 0 ? { busy, span, par: busy / span } : null;
+  };
+  // the expected time left for a pair's slots without a result (not run, or not a result and to be rerun)
+  const workLeft = (id) => {
+    let work = 0;
+    for (const task of S.tasks.tasks) for (const m of MODES) for (let k = 1; k <= K; k++) {
+      const st = eff[`${id}|${task.base}|${m}|${k}`]?.final.status || "empty";
+      if (st !== "empty" && st !== "void") continue;
+      const e = expected(id, task.base);
+      if (e == null) return null;
+      work += e;
+    }
+    return work;
+  };
+  const estimate = (pc, work, counted) => (pc ? {
+    span: pc.span, par: pc.par, perDay: counted / (pc.span / 86400),
+    left: work == null ? null : work / pc.par, total: work == null ? null : pc.span + work / pc.par,
+  } : null);
+
   const pairs = {};
   const pairIds = [...S.targets.map((t) => t.id), ...new Set(trials.map((t) => t.pair).filter((p) => p.startsWith("other:")))];
   for (const id of pairIds) {
@@ -245,9 +298,18 @@ function buildModel() {
       const b = bmap[t.bundle];
       if (b) { p.helpers.add(b.helper); if (!p.last || String(b.uploaded_at) > String(p.last)) p.last = b.uploaded_at; }
     }
+    p.time = { median: median(durs.p[id]), est: estimate(pace(timed.filter((t) => t.pair === id)), workLeft(id), p.ok + p.fail) };
     pairs[id] = p;
   }
-  S.model = { bundles, bmap, trials, eff, pairs, K };
+  // all six pairs together: their combined pace, and the work left over all of them
+  const targetIds = S.targets.map((t) => t.id);
+  const works = targetIds.map(workLeft);
+  const countedAll = targetIds.reduce((a, id) => a + pairs[id].ok + pairs[id].fail, 0);
+  const overall = {
+    counted: countedAll, total: targetIds.length * S.tasks.tasks.length * MODES.length * K,
+    est: estimate(pace(timed.filter((t) => targetIds.includes(t.pair))), works.includes(null) ? null : works.reduce((a, w) => a + w, 0), countedAll),
+  };
+  S.model = { bundles, bmap, trials, eff, pairs, K, durs, overall };
 }
 
 // ---------- rendering ----------
@@ -257,6 +319,32 @@ function bar(p, total) {
   return `<div class="bar" role="img" aria-label="success ${p.ok}, fail ${p.fail}, not a result ${p.void}, awaiting digest ${p.wait}, of ${total}">
     <div class="seg ok" style="width:${w(p.ok)}"></div><div class="seg fail" style="width:${w(p.fail)}"></div>
     <div class="seg void" style="width:${w(p.void)}"></div><div class="seg wait" style="width:${w(p.wait)}"></div></div>`;
+}
+
+const EST_HELP = "estimated total = elapsed + work left / parallelism. Work left: the expected wall time of every trial without a result "
+  + "(not run, or not a result and to be rerun): the median of the same pair and base, else of the base, the family, the pair, all trials. "
+  + "Parallelism: the trials' summed wall time / elapsed. Elapsed: from the first trial's start to the last trial's end.";
+
+function timeStats(tm) {
+  const e = tm.est;
+  return `<div class="stats time">
+    <div class="stat" title="median wall time of a trial with a result (Harbor's started_at to finished_at)"><span class="k">Median trial</span><span class="v">${fmtDur(tm.median)}</span></div>
+    <div class="stat" title="trials with a result per day of elapsed time"><span class="k">Pace</span><span class="v">${e ? `${e.perDay.toFixed(1)} / day` : "–"}</span></div>
+    <div class="stat" title="from the first trial's start to the last trial's end"><span class="k">Elapsed</span><span class="v">${e ? fmtDays(e.span) : "–"}</span></div>
+    <div class="stat" title="${esc(EST_HELP)}"><span class="k">Est. total</span><span class="v">${e?.total != null ? fmtDays(e.total) : "–"}</span></div>
+  </div>
+  <div class="eta small">${e?.left != null ? (e.left > 0 ? `About <b>${fmtDays(e.left)}</b> left at the current pace (${e.par.toFixed(1)} trials in parallel): done around <b>${fmtDate(Date.now() + e.left * 1000)}</b>.` : "All 540 trials have a result.")
+    : `<span class="faint">No timed trial yet: the estimate starts with the first digested delivery.</span>`}</div>`;
+}
+
+function renderOverall() {
+  const o = S.model.overall, e = o.est;
+  $("#overall").innerHTML = `<div class="panel overall">
+    <div><span class="k">All six pairs</span><span class="v"><b>${o.counted}</b> / ${o.total} trials with a result</span></div>
+    <div><span class="k">Pace</span><span class="v">${e ? `${e.perDay.toFixed(1)} trials / day` : "–"}</span></div>
+    <div><span class="k">Elapsed</span><span class="v">${e ? fmtDays(e.span) : "–"}</span></div>
+    <div title="${esc(EST_HELP)}"><span class="k">Est. total (${o.total})</span><span class="v">${e?.total != null ? `${fmtDays(e.total)}, done around ${fmtDate(Date.now() + e.left * 1000)}` : "–"}</span></div>
+  </div>`;
 }
 
 function renderCards() {
@@ -284,6 +372,7 @@ function renderCards() {
         <div class="stat"><span class="k">Awaiting / not run</span><span class="v">${p.wait} / ${p.empty}</span></div>
       </div>
       <div class="modes">${modes}</div>
+      ${timeStats(p.time)}
       <div class="card-foot">${foot}</div>
     </article>`;
   }).join("");
@@ -520,7 +609,7 @@ function renderMatrix() {
   const onlyIncomplete = $("#mx-incomplete").checked;
   const K = S.model.K;
   const cols = S.targets;
-  const head = `<div class="mrow head" style="--cols:${cols.length}"><div>Base</div>${cols.map((t) => `<div title="${esc(t.harness)} + ${esc(t.model)}">${esc(t.harness)}<br>${esc(t.model)}</div>`).join("")}</div>`;
+  const head = `<div class="mrow head" style="--cols:${cols.length}"><div>Base</div><div title="median wall time of this base's trials with a result, over all pairs">Median time</div>${cols.map((t) => `<div title="${esc(t.harness)} + ${esc(t.model)}">${esc(t.harness)}<br>${esc(t.model)}</div>`).join("")}</div>`;
   let html = head;
   for (const cat of S.tasks.categories) {
     if (mat !== "all" && cat.material !== mat) continue;
@@ -537,14 +626,14 @@ function renderMatrix() {
             const st = e ? e.final.status : "empty";
             if (st !== "ok" && st !== "fail") complete = false;
             const seed = e?.final.seed ?? "?";
-            const tip = `${task.base} · ${c.harness} + ${c.model}\n${m} trial ${i + 1} (seed ${seed}): ${STATUS_LABEL[st]}${e && e.attempts.length > 1 ? `, ${e.attempts.length} attempts` : ""}${e?.final.reason ? `\n${e.final.reason}` : ""}`;
+            const tip = `${task.base} · ${c.harness} + ${c.model}\n${m} trial ${i + 1} (seed ${seed}): ${STATUS_LABEL[st]}${e && e.attempts.length > 1 ? `, ${e.attempts.length} attempts` : ""}${e?.final.wall_s != null ? `\nwall time ${fmtDur(e.final.wall_s)}` : ""}${e?.final.reason ? `\n${e.final.reason}` : ""}`;
             return `<span class="cell ${st === "empty" ? "" : st}" title="${esc(tip)}"${e ? ` data-trial="${esc(e.final.bundle)}|${esc(e.final.job)}|${esc(e.final.trial_dir)}"` : ""}></span>`;
           }).join("")).join("");
           return `<div class="mcell">${sq}</div>`;
         }).join("");
         if (onlyIncomplete && complete) continue;
         const badges = [task.easy_set ? "easy set" : "", task.own_group ? "6 h" : "", task.difficulty].filter(Boolean).join(" · ");
-        famHtml += `<div class="mrow" style="--cols:${cols.length}"><div class="mname" title="${esc(task.base)}">${esc(task.base.replace(/^roboarc-/, ""))}<span class="badge">${esc(badges)}</span></div>${cells}</div>`;
+        famHtml += `<div class="mrow" style="--cols:${cols.length}"><div class="mname" title="${esc(task.base)}">${esc(task.base.replace(/^roboarc-/, ""))}<span class="badge">${esc(badges)}</span></div><div class="mtime">${fmtDur(median(S.model.durs.b[task.base]))}</div>${cells}</div>`;
       }
       if (famHtml) catHtml += `<div class="mrow fam"><div>${esc(S.tasks.tasks.find((t) => t.family === fam).family_name)}</div></div>${famHtml}`;
     }
@@ -587,6 +676,7 @@ function render() {
   if (!S.tasks) return;
   buildModel();
   if (!OFFLINE) renderStatus(); else { $("#digest-status").innerHTML = S.digest.generated_at ? `logs digested ${when(S.digest.generated_at)}` : ""; $("#release").textContent = `RoboARC ${S.tasks.release} · ${S.tasks.tasks.length} bases`; }
+  renderOverall();
   renderCards();
   renderShare();
   renderHosts();
@@ -659,7 +749,7 @@ async function openTrial(ref) {
   const kv = [
     ["Result", `<span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span>${t.result_source === "index" ? " <span class=\"small muted\">(from index.json only)</span>" : ""}`],
     ["Reason", esc(t.reason || "–")], ["Reward", esc(t.reward ?? "–")], ["Harbor exception", esc(t.exception_type || (t.exception ? "yes (awaiting digest)" : "none"))],
-    ["Wall time", t.wall_s != null ? `${Math.round(t.wall_s / 60)} min` : "–"], ["Tokens (in / out)", `${fmtInt(t.tokens_in)} / ${fmtInt(t.tokens_out)}`],
+    ["Wall time", fmtDur(t.wall_s)], ["Tokens (in / out)", `${fmtInt(t.tokens_in)} / ${fmtInt(t.tokens_out)}`],
     ["Cost", t.cost_usd != null ? `$${Number(t.cost_usd).toFixed(2)}` : "–"],
     ["Peak memory / GPU memory", `${typeof t.peak_memory_gb === "number" ? t.peak_memory_gb.toFixed(2) : "–"} GB / ${typeof t.peak_gpu_memory_gb === "number" ? t.peak_gpu_memory_gb.toFixed(2) : "–"} GB`],
     ["OOM or emergency kills", esc(t.oom_kills ?? "–")], ["Harbor exit code", esc(t.harbor_rc ?? "–")],
