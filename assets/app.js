@@ -86,6 +86,7 @@ async function refreshLive() {
         key: b.key, helper, batch, bundle, path: b.path, revision: b.rev, source: b.label, uploaded_at: b.uploaded_at,
         url: hfBlob(b.rev, b.path), run_id: runId, manifest: man.parsed, manifest_fields: man.raw, manifest_raw: man.raw,
         jobs: loose ? new Set(ts.map((t) => t.job)).size : (idx.jobs || []).length, trials: ts.length, errors: err, pending: true,
+        hardware_source: loose ? loose.hardware : man.parsed.host || man.parsed.gpus?.length ? "MANIFEST.md" : null,
         ...(loose ? { layout: "loose", batches: loose.batches, official: loose.official, redaction: loose.redaction } : {}),
       };
     });
@@ -408,11 +409,27 @@ function renderHosts() {
 // The allocation rule per trial: rigid tasks share a GPU four ways, deformable tasks have one each.
 const RULE = { rigid: { gpu: 0.25, cpu: 2, mem: 4 }, deformable: { gpu: 1, cpu: 4, mem: 8 } };
 
+// Where a delivery's machine comes from (tools/digest.py machine()): the best record it has.
+const HW_SOURCE = {
+  "batch log": "from the batch log: the machine that ran the batch",
+  "host.json": "from the jobs' host.json: the machine that ran them",
+  "MANIFEST.md": "from MANIFEST.md: the machine that sent the delivery",
+  placement: "partial: only the runner's GPU placement and the resource monitor's GPU memory; the delivery has no hardware record (no MANIFEST.md, and a runner from before 2026-10-28)",
+};
+const gb = (mib) => `${Math.round(mib / 1024)} GB`;
+
 function machineOf(b) {
   const m = b.manifest || {}, host = m.host || {}, gpus = m.gpus || [];
-  const label = Object.entries(gpus.reduce((a, g) => ((a[g.name] = (a[g.name] || 0) + 1), a), {})).map(([n, c]) => `${c} × ${n}`).join(" + ");
-  return { key: [b.helper, host.cpu_model, host.cpus, host.ram_gb, label].join("|"), helper: b.helper, host: m.host, gpus, label,
-    software: b.manifest_fields?.software };
+  const named = gpus.some((g) => g.name);
+  // "4 × NVIDIA L40S (45 GB)"; without the models, the GPUs by index and the memory of those a trial ran on
+  const label = named
+    ? Object.entries(gpus.reduce((a, g) => { const k = `${g.name || "model not recorded"}${g.memory_mib ? ` (${gb(g.memory_mib)})` : ""}`; a[k] = (a[k] || 0) + 1; return a; }, {}))
+      .map(([n, c]) => `${c} × ${n}`).join(" + ")
+    : gpus.length ? `${gpus.length} GPU${gpus.length > 1 ? "s" : ""} (${gpus.map((g) => g.index).join(", ")}), model not recorded` : "";
+  const seen = gpus.filter((g) => g.memory_mib);
+  const mem = !named && seen.length ? `${[...new Set(seen.map((g) => gb(g.memory_mib)))].join(" / ")} each on GPU ${seen.map((g) => g.index).join(", ")} (where a trial ran)` : "";
+  return { key: [b.helper, host.cpu_model, host.cpus, host.ram_gb, label].join("|"), helper: b.helper, host: m.host, gpus, label, mem,
+    software: b.manifest_fields?.software, source: b.hardware_source };
 }
 
 // The most trials that ran at once (from their start and end times), by kind, and the GPU, CPU and memory the rule asks
@@ -452,7 +469,7 @@ function renderHardware() {
   const list = Object.values(machines);
   if (!list.length) {
     $("#hardware").innerHTML = `<div class="panel empty-state"><b>No delivery yet, so the hardware is still unknown.</b>
-      <span>After the first delivery each machine shows its GPUs and driver, CPU, memory and software (MANIFEST.md); the most trials it ran at once and whether that load fits the allocation rule (the trials' start and end times); and the memory and GPU memory each trial used, its OOM kills and its container caps (the grader's records).</span></div>`;
+      <span>After the first delivery each machine shows its GPUs and driver, CPU, memory and software (the batch log's host lines, the jobs' host.json, or MANIFEST.md); the most trials it ran at once and whether that load fits the allocation rule (the trials' start and end times); and the memory and GPU memory each trial used, its OOM kills and its container caps (the grader's records).</span></div>`;
     return;
   }
   $("#hardware").innerHTML = list.map((mc) => {
@@ -485,12 +502,13 @@ function renderHardware() {
     return `<article class="panel host">
       <div class="host-head"><h3>${esc(mc.helper)} <span class="muted small">${esc(host.cpu_model || "unknown CPU")}</span></h3>
         <span class="small muted">${mc.bundles.length} ${mc.bundles.length === 1 ? "delivery" : "deliveries"}, ${ts.length} trials${first ? `, ${fmtDate(first)} → ${fmtDate(last)}` : ""}</span></div>
-      <div class="gpu-line">${mc.gpus.length ? `<span class="gpu">${esc(mc.label)}</span><span class="chip">driver ${esc(mc.gpus[0].driver)}</span>${driverTag(mc.gpus[0].driver)}` : `<span class="muted">no GPU line in MANIFEST.md</span>`}</div>
+      <div class="gpu-line">${mc.gpus.length ? `<span class="gpu">${esc(mc.label)}</span>${mc.mem ? `<span class="chip">${esc(mc.mem)}</span>` : ""}${mc.gpus[0].driver ? `<span class="chip">driver ${esc(mc.gpus[0].driver)}</span>${driverTag(mc.gpus[0].driver)}` : `<span class="chip">driver not recorded</span>`}` : `<span class="muted">no GPU record in this delivery</span>`}</div>
+      ${mc.source ? `<div class="small faint">${esc(HW_SOURCE[mc.source] || mc.source)}</div>` : ""}
       <div class="two">
         <dl class="kv">
-          <dt>CPU</dt><dd>${host.cpus ? `${host.cpus} cores` : "–"}${host.cpu_model ? `, ${esc(host.cpu_model)}` : ""}</dd>
-          <dt>Memory</dt><dd>${host.ram_gb ? `${host.ram_gb} GB` : "–"}</dd>
-          <dt>Software</dt><dd>${esc(mc.software || "–")}</dd>
+          <dt>CPU</dt><dd>${host.cpus ? `${host.cpus} cores` : "–"}${host.cpu_model ? `, ${esc(host.cpu_model)}` : host.cpus ? ", model not recorded" : ""}</dd>
+          <dt>Memory</dt><dd>${host.ram_gb ? `${host.ram_gb} GB` : mc.source ? "not recorded" : "–"}</dd>
+          <dt>Software</dt><dd>${esc(mc.software || (mc.source ? "not recorded" : "–"))}</dd>
           <dt>Most at once</dt><dd>${peak ? `${peak.total} trials (${peak.mix.rigid} rigid + ${peak.mix.deformable} deformable) on ${esc(abs(new Date(peak.at).toISOString()))}; at most ${peak.rigid} rigid and ${peak.deformable} deformable at once` : `<span class="faint">${mc.bundles.some((b) => b.pending) ? "awaiting digest" : "no timed trials"}</span>`}</dd>
           <dt>Container caps</dt><dd>${caps ? `<div class="chips">${caps}</div><div class="small faint">${enforced.length ? `enforced in ${nEnf} of ${enforced.length} trials` : ""}</div>` : "–"}</dd>
         </dl>

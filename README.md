@@ -32,6 +32,12 @@ reruns with their logs, a per-task matrix and the first frames.
   before its call, from the robot service's checkpoints, times the replay's simulated time per step, looked up in the
   frame map), and the line under the video names the call on screen. The replay's forcing and review events are listed
   as jump points. In privileged mode the agent built the trajectory offline, so the rows have no moment in the video.
+- Hardware: each delivery's machine comes from the best record it has: the batch log's `host:`, `GPUs:` and
+  `software:` lines (RoboARC runners since 2026-10-28 log them when a lane starts: the machine that ran the batch),
+  else the jobs' `host.json` (the same record), else `MANIFEST.md` (the machine that sent the delivery), else only what
+  the runner's `placement.json` (the GPUs it used, the host's CPU count) and the resource monitor's first sample (the
+  memory of the GPU a trial ran on) recorded. The card says which, and names each field the delivery did not record.
+  Each trial's GPU (index, model, memory) is on its timeline page.
 - Run time: each trial's wall time is Harbor's `started_at` to `finished_at`. A pair's estimated total time is
   elapsed + work left / parallelism, where elapsed runs from its first trial's start to its last trial's end, the
   work left is the expected wall time of every trial without a result (the median of the same pair and base, else of

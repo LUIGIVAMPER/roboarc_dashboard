@@ -295,6 +295,7 @@ function renderSummary(b, t, detail, others) {
     ["Tokens (in / cached / out)", `${fmtInt(tokIn)} / ${fmtInt(cached)} / ${fmtInt(tokOut)}`],
     ["Cost", t.cost_usd != null ? `$${Number(t.cost_usd).toFixed(2)}` : "–"],
     ["Peak memory / GPU memory", `${typeof t.peak_memory_gb === "number" ? t.peak_memory_gb.toFixed(2) : "–"} GB / ${typeof t.peak_gpu_memory_gb === "number" ? t.peak_gpu_memory_gb.toFixed(2) : "–"} GB`],
+    ["GPU", [t.gpu != null ? `GPU ${esc(t.gpu)}` : "", t.gpu_name ? esc(t.gpu_name) : "", t.gpu_memory_mib ? `${Math.round(t.gpu_memory_mib / 1024)} GB` : ""].filter(Boolean).join(" · ") || "–"],
     ["OOM or emergency kills", esc(t.oom_kills ?? "–")], ["Harbor exit code", esc(t.harbor_rc ?? "–")],
     ["Other attempts of this trial", others.length ? others.map((o) => `<a href="${esc(timelineHref({ dataset: T.dataset, rev: o.rev, path: o.path, job: o.job, trial: o.trial_dir }))}">${esc(o.result)} · ${esc(abs(o.finished_at || ""))}</a>`).join(", ") : "none"],
   ];

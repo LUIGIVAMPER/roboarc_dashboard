@@ -89,7 +89,7 @@ export function parseManifest(text) {
   const h = (raw.host || "").match(/^(.*?),\s*(\d+) CPUs,\s*(\d+) GB RAM/);
   if (h) out.host = { cpu_model: h[1], cpus: +h[2], ram_gb: +h[3] };
   out.gpus = (raw.GPUs || "").split(";").map((s) => s.trim()).filter(Boolean).map((g) => g.split(",").map((x) => x.trim()))
-    .filter((p) => p.length >= 3).map((p) => ({ index: p[0], name: p[1], driver: p[2] }));
+    .filter((p) => p.length >= 3).map((p) => ({ index: p[0], name: p[1], driver: p[2], memory_mib: +(p[3] || "").match(/^(\d+) MiB$/)?.[1] || null }));
   const r = (raw.runner || "").match(/runner (\d+): (\S+) (\S+) effort (\S+), run id (\S+), modes ([^,]+), web search (\w+)(?:, usage gateway ([^,]+))?(?:, (GPUs [0-9,]+ \(.*\)|GPU scheduling off))?/);
   if (r) out.runner = { pid: r[1], agent: r[2], model: r[3], effort: r[4], run_id: r[5], modes: r[6].split(/\s+/), web_search: r[7], usage_gateway: (r[8] || "off").trim(), gpu_placement: r[9] || null };
   const t = (raw.trials || "").match(/planned jobs (\S+), trial dirs (\S+), with a verdict (\S+)/);
@@ -147,7 +147,10 @@ export async function readLoose(dataset, rev, path, key) {
   const logged = names.filter((n) => /^jobs\/[^/]+\.log$/.test(n) && `jobs/${n.slice(5, -4)}.summary.md` in files).map((n) => n.slice(5, -4));
   const batches = [...new Set([...Object.keys(plans), ...logged])].sort();
   const [red, ...logs] = await Promise.all([json("REDACTION.json"), ...batches.map((bt) => read(`jobs/${bt}.log`))]);
-  const man = parseManifest(`runner: ${logs.map((t) => (t || "").match(/^\[[^\]]+\] (runner \d+: .*)$/m)?.[1]).find(Boolean) || ""}`);
+  // the runner line and, from runners since 2026-10-28, the machine: host:, GPUs:, software: (the first of each)
+  const first = (key) => logs.map((t) => (t || "").match(new RegExp(`^\\[[^\\]]+\\] (${key}: .*)$`, "m"))?.[1]).find(Boolean);
+  const man = parseManifest(["runner \\d+", "host", "GPUs", "software"].map(first).filter(Boolean)
+    .map((l) => (l.startsWith("runner ") ? `runner: ${l}` : l)).join("\n"));
   const ks = Object.values(plans).map((p) => p.trials).filter(Number.isInteger);
   if (ks.length) man.parsed.K = Math.max(...ks);
   const runId = Object.values(plans).find((p) => p.run_id)?.run_id || man.parsed.runner?.run_id || null;
@@ -177,5 +180,5 @@ export async function readLoose(dataset, rev, path, key) {
   };
   const redaction = red && typeof red === "object"
     ? Object.fromEntries(["notice", "sanitized_copy", "official", "provider_alias"].filter((k) => k in red).map((k) => [k, red[k]])) : null;
-  return { man, runId, trials, batches, official: red?.official ?? null, redaction };
+  return { man, runId, trials, batches, official: red?.official ?? null, redaction, hardware: man.parsed.host || man.parsed.gpus.length ? "batch log" : null };
 }

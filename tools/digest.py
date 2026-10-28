@@ -38,10 +38,12 @@ HF = "https://huggingface.co"
 SMALL = 4 << 20          # read members up to this size; bigger ones (videos, trajectories) are skipped
 TAIL = 60                # lines kept from the end of a log
 LINE = 400               # characters kept per line
+SAMPLES = "artifacts/var/rcb-monitor/samples.jsonl"   # the resource monitor's samples: the first names the trial's GPU memory
 # A bundle digested by an older version of this script is digested again. 2: the official per-trial results
 # (results/<batch>/.../config.json) are matched to their trial by its directory, not by its trial number. 3: the
 # batch log's "start" lines of the current runner ("(concurrency N; trial ...)") give the concurrency; loose deliveries.
-DIGEST_VERSION = 3
+# 4: the machine from the batch log's host lines, the jobs' host.json or placement.json; each trial's GPU.
+DIGEST_VERSION = 4
 
 
 def now():
@@ -66,10 +68,10 @@ class Hub:
     def __init__(self, dataset):
         self.dataset = dataset
 
-    def _get(self, url, stream=False):
+    def _get(self, url, stream=False, headers=None):
         for attempt in range(4):
             try:
-                r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "roboarc-dashboard"}),
+                r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "roboarc-dashboard", **(headers or {})}),
                                            timeout=120)
                 return r if stream else r.read()
             except urllib.error.HTTPError as e:
@@ -126,8 +128,9 @@ class Hub:
             url = m.group(1) if m else None
         return out
 
-    def read(self, rev, path):
-        return self._get(f"{HF}/datasets/{self.dataset}/resolve/{urllib.parse.quote(rev, safe='')}/{urllib.parse.quote(path)}")
+    def read(self, rev, path, head=None):
+        url = f"{HF}/datasets/{self.dataset}/resolve/{urllib.parse.quote(rev, safe='')}/{urllib.parse.quote(path)}"
+        return self._get(url, headers={"Range": f"bytes=0-{head - 1}"} if head else None)
 
     def open(self, rev, path):
         return self._get(f"{HF}/datasets/{self.dataset}/resolve/{urllib.parse.quote(rev, safe='')}/{urllib.parse.quote(path)}",
@@ -158,9 +161,9 @@ class Local:
         return {os.path.relpath(os.path.join(d, f), top): os.path.getsize(os.path.join(d, f))
                 for d, _, fs in os.walk(top) for f in fs}
 
-    def read(self, rev, path):
+    def read(self, rev, path, head=None):
         p = os.path.join(self.root, path)
-        return open(p, "rb").read() if os.path.isfile(p) else None
+        return open(p, "rb").read(head or -1) if os.path.isfile(p) else None
 
     def open(self, rev, path):
         p = os.path.join(self.root, path)
@@ -190,7 +193,8 @@ def parse_manifest(text):
     for g in filter(None, (s.strip() for s in raw.get("GPUs", "").split(";"))):
         parts = [p.strip() for p in g.split(",")]
         if len(parts) >= 3:
-            gpus.append({"index": parts[0], "name": parts[1], "driver": parts[2]})
+            mem = re.fullmatch(r"(\d+) MiB", parts[3]) if len(parts) >= 4 else None
+            gpus.append({"index": parts[0], "name": parts[1], "driver": parts[2], "memory_mib": int(mem.group(1)) if mem else None})
     out["gpus"] = gpus
     r = re.search(r"runner (\d+): (\S+) (\S+) effort (\S+), run id (\S+), modes ([^,]+), web search (\w+)"
                   r"(?:, usage gateway ([^,]+))?(?:, (GPUs [0-9,]+ \(.*\)|GPU scheduling off))?", raw.get("runner", ""))
@@ -211,8 +215,9 @@ TS = re.compile(r"^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\] (.*)$")
 
 
 def parse_batch_log(text):
-    """The runner's lanes (one runner pid per lane), concurrency, start/done times per job and the notable lines."""
-    lanes, jobs, notable, times, conc, runner = set(), {}, [], [], [], None
+    """The runner's lanes (one runner pid per lane), concurrency, start/done times per job, the notable lines, and the
+    machine (the host:, GPUs: and software: lines a lane logs when it starts, runners since 2026-10-28)."""
+    lanes, jobs, notable, times, conc, runner, hw = set(), {}, [], [], [], None, {}
     for line in text.splitlines():
         m = TS.match(line)
         if not m:
@@ -225,6 +230,9 @@ def parse_batch_log(text):
         if p:
             lanes.add(p.group(1))
             runner = runner or msg
+        h = re.match(r"(host|GPUs|software):\s+(.*)$", msg)
+        if h:
+            hw.setdefault(h.group(1), h.group(2))
         s = re.match(r"start (\S+): .*\(concurrency (\d+)[,;)]", msg)
         if s:
             jobs.setdefault(s.group(1), {})["start"] = t
@@ -236,7 +244,7 @@ def parse_batch_log(text):
             notable.append(f"[{t}] {msg}"[:LINE])
     return {"lanes": len(lanes), "concurrency_max": max(conc) if conc else None, "first": times[0] if times else None,
             "last": times[-1] if times else None, "jobs": jobs, "notable": notable[-200:], "pids": sorted(lanes),
-            "runner": runner}
+            "runner": runner, "hardware": hw}
 
 
 def read_tar(fobj, want):
@@ -250,18 +258,21 @@ def read_tar(fobj, want):
 
 
 JOB_FILES = ("result.json", "exception.txt", "trial.log", "verifier/reward.json", "verifier/verdict.json",
-             "verifier/resource_limits.json", "verifier/grade.log", "verifier/reward.txt", "gateway/totals.json")
+             "verifier/resource_limits.json", "verifier/grade.log", "verifier/reward.txt", "gateway/totals.json",
+             SAMPLES)
+# a job folder's own records: its seeds, the runner's GPU and reservation, the machine (host_info.py, runners since 10-28)
+JOB_LEVEL = ("seed.json", "placement.json", "host.json")
 
 
 def digest_job(src, rev, path, job, jobs_dir):
     """Per trial directory of one job archive: what the page shows (summary) and the log tails (detail)."""
     f = src.open(rev, f"{path}/jobs/{job}.tar.gz")
     if f is None:
-        return {}, None, "archive missing"
+        return {}, None, {}, "archive missing"
     pre = f"{jobs_dir}/{job}/"
 
     def want(name, size):
-        if name == f"{jobs_dir}/.seeds/{job}.json" or name == pre + "seed.json":
+        if name == f"{jobs_dir}/.seeds/{job}.json" or name in (pre + f for f in JOB_LEVEL):
             return True
         rest = name[len(pre):] if name.startswith(pre) else None
         return bool(rest) and rest.count("/") >= 1 and rest.split("/", 1)[1] in JOB_FILES
@@ -269,7 +280,7 @@ def digest_job(src, rev, path, job, jobs_dir):
     try:
         files = read_tar(f, want)
     except (tarfile.TarError, OSError, EOFError) as e:
-        return {}, None, f"archive unreadable: {e}"
+        return {}, None, {}, f"archive unreadable: {e}"
     finally:
         f.close()
     return job_records(files, pre, f"{jobs_dir}/.seeds/{job}.json") + (None,)
@@ -278,17 +289,19 @@ def digest_job(src, rev, path, job, jobs_dir):
 def digest_job_loose(src, rev, path, job, listing):
     """The same records, read file by file from a loose delivery's jobs/<job>/ (listing: the delivery's files)."""
     pre = f"jobs/{job}/"
-    names = [n for n, size in listing.items() if size <= SMALL and (
-        n == pre + "seed.json" or n == f"jobs/.seeds/{job}.json"
+    names = [n for n, size in listing.items() if (size <= SMALL or n.endswith("/" + SAMPLES)) and (
+        n in (pre + f for f in JOB_LEVEL) or n == f"jobs/.seeds/{job}.json"
         or (n.startswith(pre) and n[len(pre):].count("/") >= 1 and n[len(pre):].split("/", 1)[1] in JOB_FILES))]
-    with ThreadPoolExecutor(8) as ex:
-        data = list(ex.map(lambda n: src.read(rev, f"{path}/{n}"), names))
+    with ThreadPoolExecutor(8) as ex:   # of the samples only the first line is read
+        data = list(ex.map(lambda n: src.read(rev, f"{path}/{n}", head=8192 if n.endswith("/" + SAMPLES) else None), names))
     return job_records({n: d for n, d in zip(names, data) if d is not None}, pre, f"jobs/.seeds/{job}.json")
 
 
 def job_records(files, pre, seed_name):
-    """({trial dir: record}, seed record) from a job's files ({path: bytes}, the job folder at <pre>)."""
+    """({trial dir: record}, seed record, {placement, host}) from a job's files ({path: bytes}, the job folder at <pre>)."""
     seed = load_json(files.get(pre + "seed.json") or files.get(seed_name) or b"null")
+    place = load_json(files.get(pre + "placement.json") or b"null") or {}
+    host = load_json(files.get(pre + "host.json") or b"null") or {}
     trials = {}
     for name, data in files.items():
         rest = name[len(pre):] if name.startswith(pre) else ""
@@ -304,6 +317,10 @@ def job_records(files, pre, seed_name):
         ar = res.get("agent_result") or {}
         lim = load_json(fs.get("verifier/resource_limits.json", b"null")) or {}
         cap = ((lim.get("limits") or {}).get("caps") or {}).get("main") or {}
+        # the GPU the trial saw: its one card in the monitor's first sample ({index in the container: [used, total MiB]})
+        first = load_json((fs.get(SAMPLES) or b"").split(b"\n", 1)[0] or b"null") or {}
+        cards = first.get("cards") if isinstance(first.get("cards"), dict) else {}
+        gpu = next((g for g in host.get("gpus") or [] if g.get("index") == place.get("gpu")), {})
         wall = None
         try:
             a = dt.datetime.fromisoformat(res["started_at"].replace("Z", "+00:00"))
@@ -323,6 +340,8 @@ def job_records(files, pre, seed_name):
             "tokens_in": ar.get("n_input_tokens"), "tokens_out": ar.get("n_output_tokens"), "cost_usd": ar.get("cost_usd"),
             # the container caps the trial ran under (the task's, clamped to the host) and whether they were enforced
             "cap_cpus": cap.get("cpus"), "cap_memory_gb": cap.get("memory_gb"), "limits_enforced": lim.get("enforced"),
+            "gpu": place.get("gpu"), "gpu_name": gpu.get("name"),
+            "gpu_memory_mib": gpu.get("memory_mib") or (list(cards.values())[0][1] if len(cards) == 1 else None),
             "detail": {
                 "exception_message": (exc.get("exception_message") or "")[:4000] or None,
                 "exception_tail": tail(fs["exception.txt"]) if "exception.txt" in fs else None,
@@ -334,7 +353,7 @@ def job_records(files, pre, seed_name):
                 "gateway_totals": load_json(fs["gateway/totals.json"]) if "gateway/totals.json" in fs else None,
             },
         }
-    return out, seed
+    return out, seed, {"placement": place, "host": host}
 
 
 def gather_bundle(src, rev, path, man_b, idx):
@@ -430,7 +449,8 @@ def gather_loose(src, rev, path, listing):
            "first": min((l["first"] for l in logs if l["first"]), default=None),
            "last": max((l["last"] for l in logs if l["last"]), default=None),
            "jobs": {k: v for l in logs for k, v in l["jobs"].items()},
-           "notable": [x for l in logs for x in l["notable"]][-200:]} if logs else None
+           "notable": [x for l in logs for x in l["notable"]][-200:],
+           "hardware": next((l["hardware"] for l in logs if l["hardware"]), {})} if logs else None
     return {"man": man, "manifest_text": None, "batch": path.split("/")[1], "run_id": run_id, "log": log,
             "summary": "\n\n".join(summaries)[:300000] or None,
             "plan": {"jobs": [x for p in plans.values() for x in p.get("jobs", [])], "trials": max(ks) if ks else None,
@@ -439,6 +459,33 @@ def gather_loose(src, rev, path, listing):
             "read_job": lambda job: digest_job_loose(src, rev, path, job, listing) + (None,),
             "archive": lambda job, trial: f"{path}/jobs/{job}/{trial}/",
             "loose": {"batches": batches, "official": red.get("official") if red else None, "redaction": red}}
+
+
+def machine(man, log_hw, jobs_info, trials):
+    """Fill man's host, gpus and software with the machine the batch ran on, from the best record there is, and say which:
+    the batch log's host lines (the machine that ran it), the jobs' host.json (the same record), MANIFEST.md (the machine
+    that sent the bundle), else only what the runner's placement and the resource monitor recorded (no models)."""
+    lh = parse_manifest("\n".join(f"{k}: {v}" for k, v in log_hw.items()))
+    host = next((j["host"] for j in jobs_info if j.get("host")), None)
+    if lh.get("host") or lh["gpus"]:
+        man["host"], man["gpus"] = lh.get("host"), lh["gpus"]
+        man["raw"]["software"] = lh["raw"].get("software")
+        return "batch log"
+    if host:
+        man["host"] = {"cpu_model": host.get("cpu_model"), "cpus": host.get("cpus"), "ram_gb": host.get("memory_gb")}
+        man["gpus"] = [{k: g.get(k) for k in ("index", "name", "driver", "memory_mib")} for g in host.get("gpus") or []]
+        man["raw"]["software"] = f"{host.get('docker') or 'docker: unknown'}; harbor {host.get('harbor') or 'unknown'}"
+        return "host.json"
+    if man.get("host") or man["gpus"]:
+        return "MANIFEST.md"
+    place = next((j["placement"] for j in jobs_info if j.get("placement")), None)
+    if place:
+        mem = {t["gpu"]: t["gpu_memory_mib"] for t in trials if t.get("gpu") is not None and t.get("gpu_memory_mib")}
+        man["host"] = {"cpu_model": None, "cpus": place.get("host_cpus"), "ram_gb": None}
+        man["gpus"] = [{"index": i, "name": None, "driver": None, "memory_mib": mem.get(i)}
+                       for i in str(place.get("gpus") or "").split(",") if i]
+        return "placement"
+    return None
 
 
 def digest_bundle(src, key, rev, label, path, uploaded_at):
@@ -451,11 +498,12 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
         g = gather_bundle(src, rev, path, man_b, idx)
     man, log, plan, results, run_id, errors = g["man"], g["log"], g["plan"], g["results"], g["run_id"], g["errors"]
 
-    trials, detail = [], {}
+    trials, detail, jobs_info = [], {}, []
     for j in g["jobs"]:
-        per, seed_rec, err = g["read_job"](j["job"])
+        per, seed_rec, job_info, err = g["read_job"](j["job"])
         if err:
             errors.append(f"{j['job']}: {err}")
+        jobs_info.append(job_info)
         planned = (j.get("tasks") or [{}])
         for t in j.get("trials", []):
             d = per.get(t["trial_dir"], {})
@@ -489,15 +537,20 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
             if d.get("detail"):
                 detail[f"{j['job']}/{t['trial_dir']}"] = d["detail"]
 
+    hw_source = machine(man, (log or {}).get("hardware") or {}, jobs_info, trials)
+    for t in trials:   # each trial's GPU by its index, when only the batch log names the models
+        gpu = next((x for x in man.get("gpus") or [] if x["index"] == t.get("gpu")), None)
+        if gpu and not t.get("gpu_name"):
+            t["gpu_name"] = gpu["name"]
     b = {
-        "key": key, "helper": idx.get("helper") or path.split("/")[0], "batch": g["batch"],
+        "key": key, "helper": idx.get("helper") or path.split("/")[0], "batch": g["batch"], "hardware_source": hw_source,
         "bundle": idx.get("bundle") or path.split("/")[2], "path": path, "revision": rev, "source": label,
         "uploaded_at": uploaded_at, "url": src.url(rev, path), "run_id": run_id,
         "manifest": {k: v for k, v in man.items() if k != "raw"},
         "manifest_fields": {k: man["raw"].get(k) for k in ("repo", "software", "images", "mirror", "results", "notes",
                                                            "trials", "seeds", "runner") if man["raw"].get(k)},
         "plan": {"jobs": len(plan.get("jobs", [])), "K": plan.get("trials"), "run_id": plan.get("run_id")} if plan else None,
-        "log": {k: v for k, v in (log or {}).items() if k not in ("jobs", "notable", "pids", "runner")} or None,
+        "log": {k: v for k, v in (log or {}).items() if k not in ("jobs", "notable", "pids", "runner", "hardware")} or None,
         "jobs": len(g["jobs"]), "trials": len(trials), "errors": errors,
         "detail_file": f"data/bundles/{key}.json", "digested_at": now(), "digest_version": DIGEST_VERSION,
     }
