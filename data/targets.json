@@ -11,7 +11,7 @@
    "match": {"harness": "dsh", "model": "deepseek[-_.]?v?4[-_.]?1[-_.]?flash"}},
   {"id": "copilot-glm-5-3", "harness": "Copilot", "model": "GLM 5.3", "via": "Copilot reverse proxy",
    "match": {"harness": "copilot", "model": "glm[-_.]?5[-_.]?3"}},
-  {"id": "copilot-qwen-3-8-max", "harness": "Copilot", "model": "Qwen 3.8 Max", "via": "Copilot reverse proxy", "tentative": true,
-   "match": {"harness": "copilot", "model": "qwen[-_.]?3[-_.]?8"}}
+  {"id": "claude-code-qwen-3-8-max", "harness": "Claude Code", "model": "Qwen 3.8 Max", "via": "OpenRouter", "tentative": true,
+   "match": {"harness": "claude[-_]?code", "model": "qwen[-_.]?3[-_.]?8[-_.]?max"}}
  ]
 }
