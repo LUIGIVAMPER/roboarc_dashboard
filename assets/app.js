@@ -367,7 +367,7 @@ function renderHosts() {
           <dt>Modes</dt><dd>${esc((r.modes || []).join(" + ") || "–")}</dd>
           <dt>Web search</dt><dd>${esc(r.web_search || "–")}</dd>
           <dt>Usage gateway</dt><dd>${esc(r.usage_gateway || "–")}</dd>
-          <dt>GPU placement</dt><dd>${esc(r.gpu_placement || "– (a runner without GPU placement: every trial on GPU 0)")}</dd>
+          <dt>GPU placement</dt><dd>${esc(r.gpu_placement || (r.agent ? "– (a runner without GPU placement: every trial on GPU 0)" : "–"))}</dd>
         </dl>
         <dl class="kv">
           <dt>Parallelism</dt><dd>${log.lanes ? `${log.lanes} runner(s), concurrency ${log.concurrency_max ?? "–"} per Harbor job` : (b.pending ? "awaiting digest" : "–")}</dd>
