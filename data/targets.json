@@ -1,0 +1,17 @@
+{
+ "note": "The harness + model pairs the run must cover. A delivered run belongs to a pair when its harness (the runner line's agent, or the run id's first word) matches `harness` and its model matches `model` (case-insensitive regular expressions). Runs that match no pair are listed as other runs.",
+ "targets": [
+  {"id": "codex-gpt6-astra", "harness": "Codex", "model": "GPT-6 Astra",
+   "match": {"harness": "codex", "model": "gpt[-_.]?6[-_.]?astra"}},
+  {"id": "claude-code-opus-5-5", "harness": "Claude Code", "model": "Claude Opus 5.5",
+   "match": {"harness": "claude[-_]?code", "model": "opus[-_.]?5[-_.]?5"}},
+  {"id": "antigravity-gemini-4-argon", "harness": "Antigravity", "model": "Gemini 4 Argon",
+   "match": {"harness": "antigravity", "model": "gemini[-_.]?4[-_.]?argon"}},
+  {"id": "dsh-deepseek-v4-1-flash", "harness": "DSH", "model": "DeepSeek V4.1 Flash",
+   "match": {"harness": "dsh", "model": "deepseek[-_.]?v?4[-_.]?1[-_.]?flash"}},
+  {"id": "copilot-glm-5-3", "harness": "Copilot", "model": "GLM 5.3", "via": "Copilot reverse proxy",
+   "match": {"harness": "copilot", "model": "glm[-_.]?5[-_.]?3"}},
+  {"id": "copilot-qwen-3-8-max", "harness": "Copilot", "model": "Qwen 3.8 Max", "via": "Copilot reverse proxy", "tentative": true,
+   "match": {"harness": "copilot", "model": "qwen[-_.]?3[-_.]?8"}}
+ ]
+}

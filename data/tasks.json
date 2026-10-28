@@ -1,0 +1,1575 @@
+{
+ "release": "2.1.0",
+ "commit": "ee89051a",
+ "modes": [
+  "privileged",
+  "standard"
+ ],
+ "trials_per_task_mode": 3,
+ "categories": [
+  {
+   "material": "rigid",
+   "name": "Interlocking puzzles",
+   "families": [
+    "interlocked-claws",
+    "cast-keyhole",
+    "cast-coil",
+    "horseshoe-ring"
+   ]
+  },
+  {
+   "material": "rigid",
+   "name": "Narrow-passage traversal",
+   "families": [
+    "hedgehog-in-cage",
+    "buzz-wire-3d",
+    "lock-picking"
+   ]
+  },
+  {
+   "material": "rigid",
+   "name": "Fitting and assembly",
+   "families": [
+    "bed-bolt",
+    "clock-assembling",
+    "battery-replacement",
+    "caliper-sorting",
+    "ikea"
+   ]
+  },
+  {
+   "material": "deformable",
+   "name": "Untangling",
+   "families": [
+    "knot-untying",
+    "slotted-post-ring",
+    "orbits"
+   ]
+  },
+  {
+   "material": "deformable",
+   "name": "Threading and routing",
+   "families": [
+    "rope-threading",
+    "fiber-bundling",
+    "wire-splicing"
+   ]
+  },
+  {
+   "material": "deformable",
+   "name": "Shape control",
+   "families": [
+    "blanket-flatten",
+    "blanket-fold"
+   ]
+  }
+ ],
+ "tasks": [
+  {
+   "base": "roboarc-battery-replacement-01-i01",
+   "family": "battery-replacement",
+   "family_name": "Battery replacement",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  },
+  {
+   "base": "roboarc-bed-bolt-01-i01",
+   "family": "bed-bolt",
+   "family_name": "Bed bolt",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  },
+  {
+   "base": "roboarc-bed-bolt-02-i01",
+   "family": "bed-bolt",
+   "family_name": "Bed bolt",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  },
+  {
+   "base": "roboarc-bed-bolt-03-i01",
+   "family": "bed-bolt",
+   "family_name": "Bed bolt",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  },
+  {
+   "base": "roboarc-bed-bolt-04-i01",
+   "family": "bed-bolt",
+   "family_name": "Bed bolt",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  },
+  {
+   "base": "roboarc-bed-bolt-05-i01",
+   "family": "bed-bolt",
+   "family_name": "Bed bolt",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  },
+  {
+   "base": "roboarc-blanket-flatten-03-i01",
+   "family": "blanket-flatten",
+   "family_name": "Blanket flatten",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-flatten-04-i01",
+   "family": "blanket-flatten",
+   "family_name": "Blanket flatten",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-flatten-06-i01",
+   "family": "blanket-flatten",
+   "family_name": "Blanket flatten",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-flatten-07-i01",
+   "family": "blanket-flatten",
+   "family_name": "Blanket flatten",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-flatten-08-i01",
+   "family": "blanket-flatten",
+   "family_name": "Blanket flatten",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-fold-01-i01",
+   "family": "blanket-fold",
+   "family_name": "Blanket fold",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-fold-02-i01",
+   "family": "blanket-fold",
+   "family_name": "Blanket fold",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-fold-03-i01",
+   "family": "blanket-fold",
+   "family_name": "Blanket fold",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-fold-04-i01",
+   "family": "blanket-fold",
+   "family_name": "Blanket fold",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-blanket-fold-05-i01",
+   "family": "blanket-fold",
+   "family_name": "Blanket fold",
+   "category": "Shape control",
+   "material": "deformable",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 8.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-buzz-wire-3d-02-i01",
+   "family": "buzz-wire-3d",
+   "family_name": "3D buzz wire",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-buzz-wire-3d-04-i01",
+   "family": "buzz-wire-3d",
+   "family_name": "3D buzz wire",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-buzz-wire-3d-06-i01",
+   "family": "buzz-wire-3d",
+   "family_name": "3D buzz wire",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-buzz-wire-3d-07-i01",
+   "family": "buzz-wire-3d",
+   "family_name": "3D buzz wire",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-buzz-wire-3d-10-i01",
+   "family": "buzz-wire-3d",
+   "family_name": "3D buzz wire",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-caliper-sorting-01-i01",
+   "family": "caliper-sorting",
+   "family_name": "Caliper sorting",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  },
+  {
+   "base": "roboarc-cast-coil-04-i01",
+   "family": "cast-coil",
+   "family_name": "Cast coil",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-coil-05-i01",
+   "family": "cast-coil",
+   "family_name": "Cast coil",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-coil-06-i01",
+   "family": "cast-coil",
+   "family_name": "Cast coil",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-coil-07-i01",
+   "family": "cast-coil",
+   "family_name": "Cast coil",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-coil-08-i01",
+   "family": "cast-coil",
+   "family_name": "Cast coil",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-keyhole-02-i01",
+   "family": "cast-keyhole",
+   "family_name": "Cast keyhole",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-keyhole-03-i01",
+   "family": "cast-keyhole",
+   "family_name": "Cast keyhole",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-keyhole-04-i01",
+   "family": "cast-keyhole",
+   "family_name": "Cast keyhole",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-keyhole-05-i01",
+   "family": "cast-keyhole",
+   "family_name": "Cast keyhole",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-cast-keyhole-06-i01",
+   "family": "cast-keyhole",
+   "family_name": "Cast keyhole",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-clock-assembling-01-i01",
+   "family": "clock-assembling",
+   "family_name": "Clock assembling",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  },
+  {
+   "base": "roboarc-fiber-bundling-02-i01",
+   "family": "fiber-bundling",
+   "family_name": "Fiber bundling",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-fiber-bundling-04-i01",
+   "family": "fiber-bundling",
+   "family_name": "Fiber bundling",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-fiber-bundling-05-i01",
+   "family": "fiber-bundling",
+   "family_name": "Fiber bundling",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-fiber-bundling-08-i01",
+   "family": "fiber-bundling",
+   "family_name": "Fiber bundling",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-fiber-bundling-09-i01",
+   "family": "fiber-bundling",
+   "family_name": "Fiber bundling",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-hedgehog-in-cage-02-i01",
+   "family": "hedgehog-in-cage",
+   "family_name": "Hedgehog in cage",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-hedgehog-in-cage-03-i01",
+   "family": "hedgehog-in-cage",
+   "family_name": "Hedgehog in cage",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-hedgehog-in-cage-06-i01",
+   "family": "hedgehog-in-cage",
+   "family_name": "Hedgehog in cage",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-hedgehog-in-cage-07-i01",
+   "family": "hedgehog-in-cage",
+   "family_name": "Hedgehog in cage",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-hedgehog-in-cage-08-i01",
+   "family": "hedgehog-in-cage",
+   "family_name": "Hedgehog in cage",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-horseshoe-ring-01-i01",
+   "family": "horseshoe-ring",
+   "family_name": "Horseshoe ring",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-horseshoe-ring-02-i01",
+   "family": "horseshoe-ring",
+   "family_name": "Horseshoe ring",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-horseshoe-ring-03-i01",
+   "family": "horseshoe-ring",
+   "family_name": "Horseshoe ring",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-horseshoe-ring-04-i01",
+   "family": "horseshoe-ring",
+   "family_name": "Horseshoe ring",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-horseshoe-ring-05-i01",
+   "family": "horseshoe-ring",
+   "family_name": "Horseshoe ring",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-ikea-burvik-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-eket-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-gladom-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-ikea365-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-kyrre-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-lack-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-stegesund-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-stenerik-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-svallet-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-uppsta-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-variera-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-ikea-vesken-i00",
+   "family": "ikea",
+   "family_name": "IKEA furniture",
+   "category": "Fitting and assembly",
+   "material": "rigid",
+   "difficulty": "",
+   "seeds": [
+    0
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 4.0,
+   "memory_mb": 10240
+  },
+  {
+   "base": "roboarc-interlocked-claws-02-i01",
+   "family": "interlocked-claws",
+   "family_name": "Interlocked claws",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-interlocked-claws-05-i01",
+   "family": "interlocked-claws",
+   "family_name": "Interlocked claws",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-interlocked-claws-08-i01",
+   "family": "interlocked-claws",
+   "family_name": "Interlocked claws",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-interlocked-claws-09-i01",
+   "family": "interlocked-claws",
+   "family_name": "Interlocked claws",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-interlocked-claws-10-i01",
+   "family": "interlocked-claws",
+   "family_name": "Interlocked claws",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-interlocked-claws-11-i01",
+   "family": "interlocked-claws",
+   "family_name": "Interlocked claws",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-interlocked-claws-12-i01",
+   "family": "interlocked-claws",
+   "family_name": "Interlocked claws",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-interlocked-claws-13-i01",
+   "family": "interlocked-claws",
+   "family_name": "Interlocked claws",
+   "category": "Interlocking puzzles",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-knot-untying-02-i01",
+   "family": "knot-untying",
+   "family_name": "Knot untying",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-knot-untying-04-i01",
+   "family": "knot-untying",
+   "family_name": "Knot untying",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-knot-untying-05-i01",
+   "family": "knot-untying",
+   "family_name": "Knot untying",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-knot-untying-06-i01",
+   "family": "knot-untying",
+   "family_name": "Knot untying",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-knot-untying-07-i01",
+   "family": "knot-untying",
+   "family_name": "Knot untying",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-knot-untying-09-i01",
+   "family": "knot-untying",
+   "family_name": "Knot untying",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-lock-picking-03-i01",
+   "family": "lock-picking",
+   "family_name": "Lock picking",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": true,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-lock-picking-04-i01",
+   "family": "lock-picking",
+   "family_name": "Lock picking",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-lock-picking-05-i01",
+   "family": "lock-picking",
+   "family_name": "Lock picking",
+   "category": "Narrow-passage traversal",
+   "material": "rigid",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 30720
+  },
+  {
+   "base": "roboarc-orbits-01-i01",
+   "family": "orbits",
+   "family_name": "Orbits",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-orbits-02-i01",
+   "family": "orbits",
+   "family_name": "Orbits",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-rope-threading-04-i01",
+   "family": "rope-threading",
+   "family_name": "Rope threading",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-rope-threading-05-i01",
+   "family": "rope-threading",
+   "family_name": "Rope threading",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-rope-threading-06-i01",
+   "family": "rope-threading",
+   "family_name": "Rope threading",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-rope-threading-07-i01",
+   "family": "rope-threading",
+   "family_name": "Rope threading",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-rope-threading-08-i01",
+   "family": "rope-threading",
+   "family_name": "Rope threading",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-slotted-post-ring-01-i01",
+   "family": "slotted-post-ring",
+   "family_name": "Slotted post ring",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "very_easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-slotted-post-ring-02-i01",
+   "family": "slotted-post-ring",
+   "family_name": "Slotted post ring",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "easier",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-slotted-post-ring-03-i01",
+   "family": "slotted-post-ring",
+   "family_name": "Slotted post ring",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "easy",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-slotted-post-ring-04-i01",
+   "family": "slotted-post-ring",
+   "family_name": "Slotted post ring",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "medium",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-slotted-post-ring-05-i01",
+   "family": "slotted-post-ring",
+   "family_name": "Slotted post ring",
+   "category": "Untangling",
+   "material": "deformable",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": false,
+   "cpus": 16.0,
+   "memory_mb": 40960
+  },
+  {
+   "base": "roboarc-wire-splicing-01-i01",
+   "family": "wire-splicing",
+   "family_name": "Wire splicing",
+   "category": "Threading and routing",
+   "material": "deformable",
+   "difficulty": "hard",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "easy_set": false,
+   "own_group": true,
+   "cpus": 4.0,
+   "memory_mb": 20480
+  }
+ ]
+}

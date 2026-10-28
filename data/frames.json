@@ -1,0 +1,4 @@
+{
+ "note": "First frames (cam_high, the birth of each base at each allowed seed): frames[<base>][<seed>] = path of the image under frames/.",
+ "frames": {}
+}

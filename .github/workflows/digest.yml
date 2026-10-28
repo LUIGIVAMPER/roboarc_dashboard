@@ -1,0 +1,56 @@
+# Digest new deliveries of the RoboARC outputs dataset every 30 minutes, commit data/ when it changed, and publish the
+# site to GitHub Pages (Settings > Pages > Source: GitHub Actions).
+name: digest and publish
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Digest the dataset
+        run: python3 tools/digest.py
+      - name: Commit data/ if it changed
+        run: |
+          git add data/digest.json data/bundles
+          if git diff --cached --quiet; then
+            echo "no new deliveries"
+          else
+            git config user.name "roboarc-dashboard digest"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "digest: $(date -u +%Y-%m-%dT%H:%MZ)"
+            git pull --rebase origin main
+            git push
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  publish:
+    needs: digest
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

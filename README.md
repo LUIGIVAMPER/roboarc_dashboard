@@ -1,0 +1,44 @@
+# RoboARC run dashboard
+
+A static site that tracks the external RoboARC runs delivered to the Hugging Face dataset
+[RoboARC/RoboARC-outputs](https://huggingface.co/datasets/RoboARC/RoboARC-outputs): progress of each harness + model
+pair (90 task bases x 2 modes x 3 trials = 540 trials), the machine and runner settings of every delivery, errors and
+reruns with their logs, a per-task matrix and the first frames.
+
+## How it works
+
+- `index.html`, `assets/`: the page. No build step, no framework.
+- On every load the browser lists the dataset through the Hugging Face API (main and open pull requests) and reads the
+  `MANIFEST.md` and `index.json` of any delivery the digest has not seen yet, so a new upload shows up at once.
+- `tools/digest.py` (standard library only) reads every new delivery in full: the official per-trial results from
+  `batch.tar.gz`, and from each `jobs/<job>.tar.gz` the Harbor exception, the grader's reward fields, peak memory and GPU
+  memory and the log tails. It writes `data/digest.json` and `data/bundles/*.json`. A delivery is never overwritten in
+  the dataset, so each one is digested once.
+- `.github/workflows/digest.yml` runs the digest every 30 minutes, commits `data/` when it changed and publishes the
+  site to GitHub Pages.
+- Opening a trial can also download its job archive from Hugging Face and unpack it in the browser (full logs).
+
+The delivery format is RoboARC's `scripts/send_results.sh`: `<helper>/<batch>/<bundle id>/` with `MANIFEST.md`,
+`index.json`, `SHA256SUMS`, `INVENTORY.tsv`, `batch.tar.gz` and `jobs/<job>.tar.gz`.
+
+## Set up
+
+1. Create a GitHub repository and push this directory to its `main` branch.
+2. Settings > Pages > Build and deployment > Source: **GitHub Actions**.
+3. Settings > Actions > General: allow actions, and "Read and write permissions" for the workflow token.
+4. Run the workflow once (Actions > digest and publish > Run workflow). The site is then at
+   `https://<owner>.github.io/<repository>/`.
+
+## Data files
+
+| File | Written by | When to change it |
+|---|---|---|
+| `data/tasks.json` | `python3 tools/build_tasks.py <RoboARC checkout> [--ref origin/main]` | after a RoboARC release that changes the task bases |
+| `data/targets.json` | by hand | the harness + model pairs the run must cover, with the patterns that match a delivery's runner line or run id |
+| `data/frames.json`, `frames/` | by hand (renders) | first frames: `frames[<base>][<seed>] = "frames/<base>/seed<k>.jpg"` |
+| `data/digest.json`, `data/bundles/` | `tools/digest.py` (the workflow) | never by hand |
+
+## Local preview
+
+    python3 tools/digest.py                 # or: --local <dir with <helper>/<batch>/<bundle>/ bundles>
+    python3 -m http.server 8000             # then open http://localhost:8000/ (add ?offline to skip the live listing)
