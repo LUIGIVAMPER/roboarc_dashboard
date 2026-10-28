@@ -32,6 +32,9 @@ HF = "https://huggingface.co"
 SMALL = 4 << 20          # read members up to this size; bigger ones (videos, trajectories) are skipped
 TAIL = 60                # lines kept from the end of a log
 LINE = 400               # characters kept per line
+# A bundle digested by an older version of this script is digested again. 2: the official per-trial results
+# (results/<batch>/.../config.json) are matched to their trial by its directory, not by its trial number.
+DIGEST_VERSION = 2
 
 
 def now():
@@ -321,8 +324,8 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
                 plan = load_json(data)
             elif name.startswith("results/") and name.endswith("/config.json"):
                 c = load_json(data) or {}
-                if c.get("job") and c.get("trial"):
-                    results[(c["job"], c["trial"])] = c
+                if c.get("job") and c.get("trial_dir"):
+                    results[(c["job"], c["trial_dir"])] = c
 
     trials, detail = [], {}
     for j in idx.get("jobs", []):
@@ -371,7 +374,7 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
         "plan": {"jobs": len(plan.get("jobs", [])), "K": plan.get("trials"), "run_id": plan.get("run_id")} if plan else None,
         "log": {k: v for k, v in (log or {}).items() if k not in ("jobs", "notable")} or None,
         "jobs": len(idx.get("jobs", [])), "trials": len(trials), "errors": errors,
-        "detail_file": f"data/bundles/{key}.json", "digested_at": now(),
+        "detail_file": f"data/bundles/{key}.json", "digested_at": now(), "digest_version": DIGEST_VERSION,
     }
     det = {"key": key, "manifest_text": man_b.decode("utf-8", "replace") if man_b else None, "summary_md": summary,
            "log_notable": (log or {}).get("notable", []), "trials": detail}
@@ -402,7 +405,8 @@ def main():
         if key in seen:
             continue
         seen.add(key)
-        if key in old and old[key][0].get("revision") in (rev, "main") and not old[key][0].get("errors"):
+        if (key in old and old[key][0].get("revision") in (rev, "main") and not old[key][0].get("errors")
+                and old[key][0].get("digest_version") == DIGEST_VERSION):
             b, ts = old[key]
             if b["revision"] != rev:   # a pull request merged since: the same bundle, now in main
                 b.update(revision=rev, source=label, url=src.url(rev, path), uploaded_at=date or b.get("uploaded_at"))
