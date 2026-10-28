@@ -80,7 +80,7 @@
   <section id="uploads" aria-labelledby="h-uploads">
     <div class="section-head">
       <h2 id="h-uploads">Deliveries</h2>
-      <p>Every bundle in the dataset (<code>&lt;helper&gt;/&lt;batch&gt;/&lt;bundle&gt;/</code>), open pull requests included. Open a row for its MANIFEST.md and the error lines of its batch log.</p>
+      <p>Every bundle in the dataset (<code>&lt;helper&gt;/&lt;batch&gt;/&lt;bundle&gt;/</code>), open pull requests included. Open a row for its MANIFEST.md, the error lines of its batch log and its trials, each with its timeline.</p>
     </div>
     <div id="bundles"></div>
   </section>
@@ -88,7 +88,7 @@
   <section id="errors" aria-labelledby="h-errors">
     <div class="section-head">
       <h2 id="h-errors">Errors and reruns</h2>
-      <p>Trials that are not a result (an infrastructure failure: rerun with the same seed), trials without a verdict, trials with a Harbor exception, and trials run more than once. Open a row for the exception and the logs.</p>
+      <p>Trials that are not a result (an infrastructure failure: rerun with the same seed), trials without a verdict, trials with a Harbor exception, and trials run more than once. Open a row for its timeline, the exception and the grader log.</p>
     </div>
     <div class="chips" id="error-kinds"></div>
     <div class="filters">
@@ -108,7 +108,7 @@
   <section id="matrix" aria-labelledby="h-matrix">
     <div class="section-head">
       <h2 id="h-matrix">Task matrix</h2>
-      <p>Six squares per cell: top row privileged trials 1–3, bottom row standard trials 1–3. Hover for the trial, click to open it.</p>
+      <p>Six squares per cell: top row privileged trials 1–3, bottom row standard trials 1–3. Hover for the trial, click to open its timeline.</p>
     </div>
     <div class="filters">
       <label for="mx-material">Objects <select id="mx-material">

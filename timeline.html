@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RoboARC Trial Timeline</title>
+<meta name="description" content="One RoboARC trial by time: what the agent thought, said and ran, each command's output, and what the robot service recorded, read from the trial's job archive in the Hugging Face dataset.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="wrap masthead">
+  <a class="back small" href="./">← RoboARC Run Progress</a>
+  <div class="eyebrow" id="tl-eyebrow">Trial timeline</div>
+  <h1 id="tl-title">Loading the trial…</h1>
+  <p class="lead" id="tl-sub"></p>
+  <div class="statusline" id="tl-status"><span><span class="dot"></span>Reading the delivery…</span></div>
+</header>
+
+<main class="wrap">
+  <section id="summary" aria-labelledby="h-summary">
+    <div class="section-head">
+      <h2 id="h-summary">Result</h2>
+      <p id="summary-note">The trial's verdict and its records: the digest's when the delivery is digested, else the delivery's index.json.</p>
+    </div>
+    <div id="summary-body"></div>
+  </section>
+
+  <section id="timeline" aria-labelledby="h-timeline">
+    <div class="section-head">
+      <h2 id="h-timeline">Timeline</h2>
+      <p>Every model turn of the agent (Harbor's <code>agent/trajectory.json</code>): its thinking, what it said, each command with the command's output (open a row), and the turn's tokens. Between them, what the robot did: the robot service's record in standard mode (<code>artifacts/data/episode.jsonl</code>), the simulator tooling's own log in privileged mode (<code>rcb_session_log.jsonl</code>, self-reported). Times count from the agent's first turn.</p>
+    </div>
+    <div class="chips" id="tl-stats"></div>
+    <div class="panel tl-strip-panel">
+      <div class="tl-strip-head small muted"><span>Activity per minute: <i class="sw agent"></i>commands <i class="sw robot"></i>robot actions. Click to jump.</span><span id="tl-strip-range"></span></div>
+      <div class="tl-strip" id="tl-strip" role="group" aria-label="Activity over the trial, per minute"></div>
+    </div>
+    <div class="filters tl-filters">
+      <span class="muted">Show</span>
+      <label><input type="checkbox" data-kind="think" checked> Thinking</label>
+      <label><input type="checkbox" data-kind="say" checked> Messages</label>
+      <label><input type="checkbox" data-kind="tool" checked> Commands</label>
+      <label><input type="checkbox" data-kind="robot" checked> Robot</label>
+      <label><input type="checkbox" data-kind="prompt" checked> Prompts</label>
+      <label for="tl-search">Search <input type="search" id="tl-search" placeholder="text, command or output"></label>
+      <button class="btn" type="button" id="tl-expand">Expand all</button>
+      <span class="small muted" id="tl-count"></span>
+    </div>
+    <div class="tl-list" id="tl-list"><div class="panel empty-state"><span>Reading the job archive from Hugging Face…</span></div></div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Read from the job archive of this trial in the Hugging Face dataset <a id="ds-link" href="https://huggingface.co/datasets/RoboARC/RoboARC-outputs" target="_blank" rel="noopener">RoboARC/RoboARC-outputs</a>, in the browser: only the part of the archive up to the robot's record is downloaded.</p>
+</footer>
+<script src="assets/timeline.js" type="module"></script>
+</body>
+</html>

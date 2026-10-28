@@ -7,7 +7,7 @@ reruns with their logs, a per-task matrix and the first frames.
 
 ## How it works
 
-- `index.html`, `assets/`: the page. No build step, no framework.
+- `index.html`, `assets/`: the page. No build step, no framework. `assets/common.js` holds what the two pages share.
 - On every load the browser lists the dataset through the Hugging Face API (main and open pull requests) and reads the
   `MANIFEST.md` and `index.json` of any delivery the digest has not seen yet, so a new upload shows up at once.
 - `tools/digest.py` (standard library only) reads every new delivery in full: the official per-trial results from
@@ -16,7 +16,14 @@ reruns with their logs, a per-task matrix and the first frames.
   the dataset, so each one is digested once.
 - `.github/workflows/digest.yml` runs the digest every 30 minutes, commits `data/` when it changed and publishes the
   site to GitHub Pages.
-- Opening a trial can also download its job archive from Hugging Face and unpack it in the browser (full logs).
+- Opening a trial (a row of the errors table, a square of the task matrix, a trial of a delivery) goes to its timeline,
+  `timeline.html?rev=<revision>&path=<helper>/<batch>/<bundle>&job=<job>&trial=<trial dir>`: every model turn of the agent
+  (Harbor's ATIF trajectory, `agent/trajectory.json`: thinking, messages, each command with its output, tokens) merged by
+  time with the robot's record (`artifacts/data/episode.jsonl` in standard mode, the self-reported
+  `rcb_session_log.jsonl` in privileged mode), with an activity strip, filters and a search. The page reads them from
+  the trial's job archive on Hugging Face in the browser and stops downloading once it has them (the archive is sorted
+  by name, so they come first), so a delivery has its timelines before it is digested and nothing is added to `data/`.
+  The result panel above the timeline is the digest's record of the trial, or the delivery's `index.json` before then.
 - Run time: each trial's wall time is Harbor's `started_at` to `finished_at`. A pair's estimated total time is
   elapsed + work left / parallelism, where elapsed runs from its first trial's start to its last trial's end, the
   work left is the expected wall time of every trial without a result (the median of the same pair and base, else of

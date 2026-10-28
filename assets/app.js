@@ -1,13 +1,15 @@
 // RoboARC run dashboard. Static data (data/*.json) plus a live listing of the Hugging Face dataset on every load.
 // No framework, no build step.
 
-const HF = "https://huggingface.co";
-const DEFAULT_DATASET = "RoboARC/RoboARC-outputs";
+import {
+  HF, DEFAULT_DATASET, STATUS_LABEL, $, esc, pct, median, fmtDur, fmtDays, fmtDate, minuteStamp, abs, when,
+  getJSON, getText, encRev, encPath, hfResolveIn, hfBlobIn, statusOf, timelineHref, parseManifest, trialsFromIndex,
+} from "./common.js";
+
 const LIVE_EVERY_MS = 5 * 60 * 1000;
 const OFFLINE = new URLSearchParams(location.search).has("offline");   // ?offline: data/digest.json only, no live listing
 const MODES = ["privileged", "standard"];
 const MODE_LABEL = { privileged: "privileged", standard: "standard" };
-const STATUS_LABEL = { ok: "success", fail: "fail", void: "not a result", wait: "awaiting digest", empty: "not run" };
 
 const S = {
   tasks: null, targets: [], digest: { bundles: [], trials: [] }, frames: {}, helpers: {}, shareBlocks: [],
@@ -17,57 +19,6 @@ const S = {
   model: null,          // derived: slots, progress, ...
 };
 
-// ---------- helpers ----------
-
-const $ = (sel) => document.querySelector(sel);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const fmtInt = (n) => (n == null ? "–" : Number(n).toLocaleString("en-US"));
-const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : "–");
-const median = (xs) => {
-  if (!xs || !xs.length) return null;
-  const a = [...xs].sort((x, y) => x - y), m = a.length >> 1;
-  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
-};
-function fmtDur(sec) {
-  if (sec == null || !Number.isFinite(sec)) return "–";
-  if (sec < 3600) return `${Math.round(sec / 60)} min`;
-  if (sec < 48 * 3600) return `${(sec / 3600).toFixed(1)} h`;
-  return `${(sec / 86400).toFixed(1)} days`;
-}
-const fmtDays = (sec) => (sec == null || !Number.isFinite(sec) ? "–" : `${(sec / 86400).toFixed(1)} d`);
-const fmtDate = (ms) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-const minuteStamp = () => Math.floor(Date.now() / 60000);
-
-function rel(iso) {
-  if (!iso) return "–";
-  const t = new Date(String(iso).replace(" ", "T")).getTime();
-  if (Number.isNaN(t)) return esc(iso);
-  const s = Math.round((Date.now() - t) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  return `${Math.round(s / 86400)} days ago`;
-}
-function abs(iso) {
-  if (!iso) return "";
-  const d = new Date(String(iso).replace(" ", "T"));
-  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString("en-US", { hour12: false });
-}
-const when = (iso) => `<span title="${esc(abs(iso))}">${rel(iso)}</span>`;
-
-async function getJSON(url, { optional = false } = {}) {
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) {
-    if (optional && r.status === 404) return null;
-    throw new Error(`${r.status} ${url}`);
-  }
-  return r.json();
-}
-async function getText(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`${r.status} ${url}`);
-  return r.text();
-}
 async function pool(items, n, fn) {
   const out = [];
   let i = 0;
@@ -76,53 +27,8 @@ async function pool(items, n, fn) {
   }));
   return out;
 }
-const encRev = (rev) => encodeURIComponent(rev);
-const encPath = (p) => p.split("/").map(encodeURIComponent).join("/");
-const hfResolve = (rev, path) => `${HF}/datasets/${S.dataset}/resolve/${encRev(rev)}/${encPath(path)}`;
-const hfBlob = (rev, path) => `${HF}/datasets/${S.dataset}/tree/${encRev(rev)}/${encPath(path)}`;
-
-// ---------- the MANIFEST.md and index.json of a bundle (same reading as tools/digest.py) ----------
-
-function parseManifest(text) {
-  const raw = {};
-  let key = null;
-  for (const line of (text || "").split("\n")) {
-    const m = line.match(/^([A-Za-z0-9_ ]+?):\s+(.*)$/);
-    if (m && !line.startsWith(" ")) { key = m[1].trim(); raw[key] = m[2].trim(); }
-    else if (key && line.trim()) raw[key] += "\n" + line.trim();
-  }
-  const out = {};
-  const h = (raw.host || "").match(/^(.*?),\s*(\d+) CPUs,\s*(\d+) GB RAM/);
-  if (h) out.host = { cpu_model: h[1], cpus: +h[2], ram_gb: +h[3] };
-  out.gpus = (raw.GPUs || "").split(";").map((s) => s.trim()).filter(Boolean).map((g) => g.split(",").map((x) => x.trim()))
-    .filter((p) => p.length >= 3).map((p) => ({ index: p[0], name: p[1], driver: p[2] }));
-  const r = (raw.runner || "").match(/runner (\d+): (\S+) (\S+) effort (\S+), run id (\S+), modes ([^,]+), web search (\w+)(?:, usage gateway ([^,]+))?(?:, (GPUs [0-9,]+ \(.*\)|GPU scheduling off))?/);
-  if (r) out.runner = { pid: r[1], agent: r[2], model: r[3], effort: r[4], run_id: r[5], modes: r[6].split(/\s+/), web_search: r[7], usage_gateway: (r[8] || "off").trim(), gpu_placement: r[9] || null };
-  const t = (raw.trials || "").match(/planned jobs (\S+), trial dirs (\S+), with a verdict (\S+)/);
-  if (t) out.trials = { planned_jobs: t[1], trial_dirs: t[2], with_verdict: t[3] };
-  const k = (raw.seeds || "").match(/K = (\d+)/);
-  if (k) out.K = +k[1];
-  return { parsed: out, raw };
-}
-
-function trialsFromIndex(idx, key, path, runId) {
-  const rows = [];
-  for (const j of idx.jobs || []) {
-    const planned = j.tasks || [];
-    for (const t of j.trials || []) {
-      const p = planned.length === 1 ? planned[0] : (planned.find((x) => t.trial_dir.startsWith((x.task || "").slice(0, 20))) || {});
-      const task = p.task || "";
-      const base = task.replace(/-(privileged|standard|standard-realtime)$/, "") || null;
-      rows.push({
-        bundle: key, job: j.job, trial_dir: t.trial_dir, base, mode: p.mode || null, k: p.trial ?? null, seed: p.seed ?? null,
-        run_id: idx.run_id || runId, reward: t.reward, exception: !!t.exception,
-        result: t.reward != null && t.reward >= 1 ? "success" : "pending", result_source: "index",
-        archive: `${path}/jobs/${j.job}.tar.gz`, live: true,
-      });
-    }
-  }
-  return rows;
-}
+const hfResolve = (rev, path) => hfResolveIn(S.dataset, rev, path);
+const hfBlob = (rev, path) => hfBlobIn(S.dataset, rev, path);
 
 // ---------- live listing of the dataset ----------
 
@@ -198,13 +104,6 @@ function pairOf(bundle, trial) {
     if (new RegExp(t.match.harness, "i").test(harness) && new RegExp(t.match.model, "i").test(model)) return t.id;
   }
   return runId ? `other:${runId}` : "other:?";
-}
-
-function statusOf(t) {
-  if (t.result === "success") return "ok";
-  if (t.result === "fail") return "fail";
-  if (t.result === "pending") return "wait";
-  return "void";       // not_a_result, no_verdict
 }
 
 function buildModel() {
@@ -794,130 +693,23 @@ async function openBundle(key) {
   if (d?.manifest_text) html += `<div><h4>MANIFEST.md</h4>${pre(d.manifest_text)}</div>`;
   else if (b.pending) html += `<div><h4>MANIFEST.md</h4>${pre(Object.entries(raw).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div>`;
   if (d?.log_notable?.length) html += `<div><h4>Error and rerun lines of the batch log</h4>${pre(d.log_notable)}</div>`;
+  const ts = S.model.trials.filter((t) => t.bundle === b.key).sort((x, y) => `${x.base}|${x.mode}|${x.k}`.localeCompare(`${y.base}|${y.mode}|${y.k}`));
+  if (ts.length) html += `<div><h4>Trials: open one for its timeline</h4><div class="table-wrap"><table><thead><tr><th>Base</th><th>Mode</th><th>Trial / seed</th><th>Result</th><th>Wall time</th></tr></thead><tbody>${ts.map((t) =>
+    `<tr class="clickable" data-trial="${esc(t.bundle)}|${esc(t.job)}|${esc(t.trial_dir)}" tabindex="0"><td class="mono">${esc(t.base || "?")}</td><td>${esc(t.mode || "?")}</td><td class="mono">${t.k ?? "?"} / ${t.seed ?? "?"}</td>
+      <td><span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span>${t.reward != null ? ` <span class="small muted">reward ${esc(t.reward)}</span>` : ""}</td><td class="mono">${fmtDur(t.wall_s)}</td></tr>`).join("")}</tbody></table></div></div>`;
   if (d?.summary_md) html += `<details><summary class="small">Batch summary (${esc(b.batch)}.summary.md)</summary>${pre(d.summary_md)}</details>`;
   if (b.pending) html += `<p class="small muted">This delivery is not digested yet; the next digest adds the official results, the exceptions and the resource peaks.</p>`;
   body.innerHTML = html;
 }
 
-async function openTrial(ref) {
+// A trial opens its timeline page (timeline.html): what the agent thought, said and ran, and what the robot did, by time.
+function openTrial(ref, e) {
   const [bkey, job, trialDir] = ref.split("|");
-  const t = S.model.trials.find((x) => x.bundle === bkey && x.job === job && x.trial_dir === trialDir);
   const b = S.model.bmap[bkey];
-  if (!t || !b) return;
-  const slot = S.model.eff[`${t.pair}|${t.base}|${t.mode}|${t.k}`];
-  const body = openDrawer(`${esc(t.base || "?")} <span class="faint">· ${esc(t.mode || "?")} trial ${t.k ?? "?"}</span>`,
-    `${esc(pairLabel(t.pair))} · seed ${t.seed ?? "?"} · <code>${esc(t.trial_dir)}</code>`, `<p class="muted">Loading…</p>`);
-  const d = (await bundleDetail(b))?.trials?.[`${job}/${trialDir}`];
-  const kv = [
-    ["Result", `<span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span>${t.result_source === "index" ? " <span class=\"small muted\">(from index.json only)</span>" : ""}`],
-    ["Reason", esc(t.reason || "–")], ["Reward", esc(t.reward ?? "–")], ["Harbor exception", esc(t.exception_type || (t.exception ? "yes (awaiting digest)" : "none"))],
-    ["Wall time", fmtDur(t.wall_s)], ["Tokens (in / out)", `${fmtInt(t.tokens_in)} / ${fmtInt(t.tokens_out)}`],
-    ["Cost", t.cost_usd != null ? `$${Number(t.cost_usd).toFixed(2)}` : "–"],
-    ["Peak memory / GPU memory", `${typeof t.peak_memory_gb === "number" ? t.peak_memory_gb.toFixed(2) : "–"} GB / ${typeof t.peak_gpu_memory_gb === "number" ? t.peak_gpu_memory_gb.toFixed(2) : "–"} GB`],
-    ["OOM or emergency kills", esc(t.oom_kills ?? "–")], ["Harbor exit code", esc(t.harbor_rc ?? "–")],
-    ["Attempts", slot ? `${slot.attempts.length}${t.attempts_over_cap ? " (over the cap)" : ""}` : "–"],
-  ];
-  let html = `<dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
-  if (slot && slot.attempts.length > 1) {
-    html += `<div><h4>All attempts of this trial</h4><div class="table-wrap"><table><thead><tr><th>Time</th><th>Result</th><th>Reason</th><th>Batch</th></tr></thead><tbody>${slot.attempts.map((a) =>
-      `<tr><td class="nowrap">${esc(abs(a.when))}</td><td><span class="pill ${a.status}">${STATUS_LABEL[a.status]}</span></td><td>${esc(a.reason || a.exception_type || "")}</td><td class="mono small">${esc(S.model.bmap[a.bundle]?.batch || "")}</td></tr>`).join("")}</tbody></table></div></div>`;
-  }
-  if (d) {
-    if (d.exception_message) html += `<div><h4>Exception (result.json)</h4>${pre(d.exception_message)}</div>`;
-    if (d.exception_tail) html += `<div><h4>End of exception.txt</h4>${pre(d.exception_tail)}</div>`;
-    if (d.grade_tail && d.grade_tail.join("").trim()) html += `<div><h4>End of the grader log, verifier/grade.log</h4>${pre(d.grade_tail)}</div>`;
-    if (d.trial_tail) html += `<div><h4>End of trial.log</h4>${pre(d.trial_tail)}</div>`;
-    if (d.reward) html += `<details><summary class="small">Grader fields, verifier/reward.json</summary>${jsonPre(d.reward)}</details>`;
-    if (d.resource_limits) html += `<details><summary class="small">Resource limits, verifier/resource_limits.json</summary>${jsonPre(d.resource_limits)}</details>`;
-    if (d.gateway_totals) html += `<details><summary class="small">Usage gateway, gateway/totals.json</summary>${jsonPre(d.gateway_totals)}</details>`;
-  }
-  const archUrl = b.revision === "local" ? null : hfResolve(b.revision, t.archive);
-  html += `<div><h4>Full logs</h4><p class="small muted">Downloads this trial's job archive (<code>${esc(t.archive.split("/").pop())}</code>) from Hugging Face and unpacks it in the browser: the end of exception.txt, trial.log, the grader log and the agent logs.</p>
-    <div class="chips" style="margin-top:6px">${archUrl ? `<button class="btn" type="button" id="load-archive">Read here</button><a class="btn" href="${esc(archUrl)}" target="_blank" rel="noopener">Download .tar.gz</a>` : "<span class=\"faint\">local test data: no download link</span>"}</div>
-    <div id="archive-out"></div></div>`;
-  body.innerHTML = html;
-  body.querySelector("#load-archive")?.addEventListener("click", (e) => loadArchive(e.currentTarget, archUrl, job, trialDir));
-}
-
-// ---------- reading a job archive in the browser (gzip stream + tar) ----------
-
-class ByteQueue {
-  constructor(reader) { this.r = reader; this.q = []; this.off = 0; this.len = 0; this.total = 0; }
-  async more() { const { done, value } = await this.r.read(); if (done) return false; this.q.push(value); this.len += value.length; this.total += value.length; return true; }
-  async take(n) {
-    while (this.len < n) if (!(await this.more())) return null;
-    const out = new Uint8Array(n);
-    let p = 0;
-    while (p < n) {
-      const c = this.q[0], k = Math.min(c.length - this.off, n - p);
-      out.set(c.subarray(this.off, this.off + k), p); p += k; this.off += k;
-      if (this.off === c.length) { this.q.shift(); this.off = 0; }
-    }
-    this.len -= n;
-    return out;
-  }
-  async skip(n) {
-    while (n > 0) {
-      if (!this.len && !(await this.more())) return false;
-      const c = this.q[0], k = Math.min(c.length - this.off, n);
-      this.off += k; this.len -= k; n -= k;
-      if (this.off === c.length) { this.q.shift(); this.off = 0; }
-    }
-    return true;
-  }
-}
-
-async function untarGz(url, want, onProgress) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const q = new ByteQueue(res.body.pipeThrough(new DecompressionStream("gzip")).getReader());
-  const dec = new TextDecoder();
-  const str = (h, a, b) => dec.decode(h.subarray(a, b)).replace(/\0[\s\S]*$/, "");
-  const out = {};
-  let longName = null, paxPath = null;
-  for (;;) {
-    const h = await q.take(512);
-    if (!h || h.every((x) => x === 0)) break;
-    let name = str(h, 0, 100);
-    const size = parseInt(str(h, 124, 136).trim() || "0", 8) || 0;
-    const type = String.fromCharCode(h[156] || 48);
-    const prefix = str(h, 257, 263).startsWith("ustar") ? str(h, 345, 500) : "";
-    if (prefix) name = `${prefix}/${name}`;
-    const padded = Math.ceil(size / 512) * 512;
-    if (type === "L") { const d = await q.take(padded); longName = str(d, 0, size); continue; }
-    if (type === "x") { const d = await q.take(padded); const m = dec.decode(d.subarray(0, size)).match(/\d+ path=([^\n]*)\n/); if (m) paxPath = m[1]; continue; }
-    if (longName) { name = longName; longName = null; }
-    if (paxPath) { name = paxPath; paxPath = null; }
-    if ((type === "0" || type === "\0") && want(name, size)) { const d = await q.take(padded); out[name] = d.subarray(0, size); }
-    else if (!(await q.skip(padded))) break;
-    onProgress?.(q.total);
-  }
-  return out;
-}
-
-async function loadArchive(btn, url, job, trialDir) {
-  const outEl = $("#archive-out");
-  btn.disabled = true;
-  outEl.innerHTML = `<p class="small muted">Downloading and unpacking…</p>`;
-  const MAX = 50 << 20;
-  const marker = `/${job}/${trialDir}/`;
-  const keep = (rel) => ["exception.txt", "trial.log", "result.json", "verifier/grade.log", "verifier/reward.json", "verifier/verdict.json"].includes(rel)
-    || /^agent\/[^/]+\.(txt|log)$/.test(rel) || /^agent\/setup\/[^/]+\.(txt|log)$/.test(rel);
-  try {
-    const files = await untarGz(url, (name, size) => size <= MAX && name.includes(marker) && keep(name.split(marker)[1]),
-      (n) => { outEl.firstElementChild.textContent = `Downloading and unpacking… ${(n / 1048576).toFixed(1)} MB unpacked`; });
-    const names = Object.keys(files).sort();
-    if (!names.length) { outEl.innerHTML = `<p class="small muted">No log file of this trial in the archive.</p>`; return; }
-    const dec = new TextDecoder();
-    const view = (n) => { const lines = dec.decode(files[n]).split("\n"); return (lines.length > 400 ? [`… (${lines.length - 400} earlier lines left out)`, ...lines.slice(-400)] : lines).join("\n"); };
-    outEl.innerHTML = `<div class="tabs" role="tablist">${names.map((n, i) => `<button type="button" role="tab" aria-selected="${i === 0}" data-file="${esc(n)}">${esc(n.split(marker)[1])}</button>`).join("")}</div><pre class="log" id="archive-view"></pre>`;
-    const show = (n) => { $("#archive-view").textContent = view(n); outEl.querySelectorAll("[role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.file === n))); };
-    outEl.querySelectorAll("[role=tab]").forEach((b) => b.addEventListener("click", () => show(b.dataset.file)));
-    show(names[0]);
-  } catch (e) {
-    outEl.innerHTML = `<p class="small" style="color:var(--fail)">Could not read it: ${esc(e.message)}. Use "Download .tar.gz" to open it yourself.</p>`;
-    btn.disabled = false;
-  }
+  if (!b) return;
+  const href = timelineHref({ dataset: S.dataset, rev: b.revision, path: b.path, job, trial: trialDir });
+  if (e && (e.metaKey || e.ctrlKey || e.button === 1)) window.open(href, "_blank", "noopener");
+  else location.href = href;
 }
 
 // ---------- events and start ----------
@@ -932,7 +724,7 @@ function wire() {
     const cp = e.target.closest("[data-copy]");
     if (cp) return copyShare(cp);
     const tr = e.target.closest("[data-trial]");
-    if (tr) return openTrial(tr.dataset.trial);
+    if (tr) return openTrial(tr.dataset.trial, e);
     const br = e.target.closest("[data-bundle]");
     if (br) return openBundle(br.dataset.bundle);
   });
