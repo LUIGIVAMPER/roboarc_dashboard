@@ -6,8 +6,8 @@ const DEFAULT_DATASET = "RoboARC/RoboARC-outputs";
 const LIVE_EVERY_MS = 5 * 60 * 1000;
 const OFFLINE = new URLSearchParams(location.search).has("offline");   // ?offline: data/digest.json only, no live listing
 const MODES = ["privileged", "standard"];
-const MODE_ZH = { privileged: "privileged", standard: "standard" };
-const STATUS_ZH = { ok: "成功", fail: "失败", void: "不算结果", wait: "待解析", empty: "还没跑" };
+const MODE_LABEL = { privileged: "privileged", standard: "standard" };
+const STATUS_LABEL = { ok: "success", fail: "fail", void: "not a result", wait: "awaiting digest", empty: "not run" };
 
 const S = {
   tasks: null, targets: [], digest: { bundles: [], trials: [] }, frames: {},
@@ -21,7 +21,7 @@ const S = {
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const fmtInt = (n) => (n == null ? "–" : Number(n).toLocaleString("zh-CN"));
+const fmtInt = (n) => (n == null ? "–" : Number(n).toLocaleString("en-US"));
 const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : "–");
 const minuteStamp = () => Math.floor(Date.now() / 60000);
 
@@ -30,15 +30,15 @@ function rel(iso) {
   const t = new Date(String(iso).replace(" ", "T")).getTime();
   if (Number.isNaN(t)) return esc(iso);
   const s = Math.round((Date.now() - t) / 1000);
-  if (s < 60) return "刚刚";
-  if (s < 3600) return `${Math.round(s / 60)} 分钟前`;
-  if (s < 86400) return `${Math.round(s / 3600)} 小时前`;
-  return `${Math.round(s / 86400)} 天前`;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} days ago`;
 }
 function abs(iso) {
   if (!iso) return "";
   const d = new Date(String(iso).replace(" ", "T"));
-  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString("zh-CN", { hour12: false });
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString("en-US", { hour12: false });
 }
 const when = (iso) => `<span title="${esc(abs(iso))}">${rel(iso)}</span>`;
 
@@ -254,7 +254,7 @@ function buildModel() {
 
 function bar(p, total) {
   const w = (n) => `${(100 * n) / total}%`;
-  return `<div class="bar" role="img" aria-label="成功 ${p.ok}，失败 ${p.fail}，不算结果 ${p.void}，待解析 ${p.wait}，共 ${total}">
+  return `<div class="bar" role="img" aria-label="success ${p.ok}, fail ${p.fail}, not a result ${p.void}, awaiting digest ${p.wait}, of ${total}">
     <div class="seg ok" style="width:${w(p.ok)}"></div><div class="seg fail" style="width:${w(p.fail)}"></div>
     <div class="seg void" style="width:${w(p.void)}"></div><div class="seg wait" style="width:${w(p.wait)}"></div></div>`;
 }
@@ -264,24 +264,24 @@ function renderCards() {
   $("#cards").innerHTML = S.targets.map((t) => {
     const p = pairs[t.id];
     const counted = p.ok + p.fail;
-    const tags = [t.via ? `<span class="tag">${esc(t.via)}</span>` : "", t.tentative ? `<span class="tag warn">待定</span>` : ""].join("");
+    const tags = [t.via ? `<span class="tag">${esc(t.via)}</span>` : "", t.tentative ? `<span class="tag warn">tentative</span>` : ""].join("");
     const modes = MODES.map((m) => {
       const q = p.modes[m];
-      return `<span>${MODE_ZH[m]}</span>${bar(q, q.total)}<span class="mono">${q.ok + q.fail}/${q.total}</span>`;
+      return `<span>${MODE_LABEL[m]}</span>${bar(q, q.total)}<span class="mono">${q.ok + q.fail}/${q.total}</span>`;
     }).join("");
     const foot = p.runIds.size
-      ? `<span>run id：${[...p.runIds].map((r) => `<code>${esc(r)}</code>`).join("、")}</span><span>上传者：${esc([...p.helpers].join("、"))}</span><span>最近上传 ${when(p.last)}</span>`
-      : `<span>还没有上传</span>`;
-    const unknown = p.unknownBases.size ? `<span class="tag bad" title="${esc([...p.unknownBases].join(", "))}">${p.unknownBases.size} 个底档不在 ${esc(S.tasks.release)} 里</span>` : "";
+      ? `<span>run id: ${[...p.runIds].map((r) => `<code>${esc(r)}</code>`).join(", ")}</span><span>helper: ${esc([...p.helpers].join(", "))}</span><span>last delivery ${when(p.last)}</span>`
+      : `<span>no delivery yet</span>`;
+    const unknown = p.unknownBases.size ? `<span class="tag bad" title="${esc([...p.unknownBases].join(", "))}">${p.unknownBases.size} bases not in ${esc(S.tasks.release)}</span>` : "";
     return `<article class="panel card" aria-label="${esc(t.harness)} + ${esc(t.model)}">
       <div class="card-top"><div><div class="harness">${esc(t.harness)}</div><div class="model">${esc(t.model)}</div></div><div class="chips">${tags}${unknown}</div></div>
-      <div class="count"><span class="n">${counted}</span><span class="d">/ ${p.total} 局已出结果</span></div>
+      <div class="count"><span class="n">${counted}</span><span class="d">/ ${p.total} trials with a result</span></div>
       ${bar(p, p.total)}
       <div class="stats">
-        <div class="stat" title="成功 ÷（成功 + 失败），只算已出结果的局"><span class="k">成功率</span><span class="v">${pct(p.ok, counted)}</span></div>
-        <div class="stat"><span class="k">成功 / 失败</span><span class="v">${p.ok} / ${p.fail}</span></div>
-        <div class="stat" title="不算结果的局，要用同一个种子重跑"><span class="k">要重跑</span><span class="v">${p.void}</span></div>
-        <div class="stat"><span class="k">待解析 / 未跑</span><span class="v">${p.wait} / ${p.empty}</span></div>
+        <div class="stat" title="success ÷ (success + fail), over the trials with a result"><span class="k">Success rate</span><span class="v">${pct(p.ok, counted)}</span></div>
+        <div class="stat"><span class="k">Success / fail</span><span class="v">${p.ok} / ${p.fail}</span></div>
+        <div class="stat" title="trials that are not a result; rerun them with the same seed"><span class="k">To rerun</span><span class="v">${p.void}</span></div>
+        <div class="stat"><span class="k">Awaiting / not run</span><span class="v">${p.wait} / ${p.empty}</span></div>
       </div>
       <div class="modes">${modes}</div>
       <div class="card-foot">${foot}</div>
@@ -290,8 +290,8 @@ function renderCards() {
 
   const others = Object.values(pairs).filter((p) => p.id.startsWith("other:"));
   $("#other-runs").innerHTML = others.length ? `<div class="table-wrap"><table>
-    <thead><tr><th>不属于上面六个组合的运行（run id）</th><th>上传者</th><th>已出结果</th><th>成功 / 失败</th><th>不算结果</th><th>最近上传</th></tr></thead>
-    <tbody>${others.map((p) => `<tr><td><code>${esc(p.id.slice(6))}</code></td><td>${esc([...p.helpers].join("、"))}</td>
+    <thead><tr><th>Runs outside the six pairs (run id)</th><th>Helper</th><th>With a result</th><th>Success / fail</th><th>Not a result</th><th>Last delivery</th></tr></thead>
+    <tbody>${others.map((p) => `<tr><td><code>${esc(p.id.slice(6))}</code></td><td>${esc([...p.helpers].join(", "))}</td>
       <td class="mono">${p.ok + p.fail} / ${p.total}</td><td class="mono">${p.ok} / ${p.fail}</td><td class="mono">${p.void}</td><td>${when(p.last)}</td></tr>`).join("")}</tbody></table></div>` : "";
 }
 
@@ -307,15 +307,15 @@ function latestByHelper() {
 function driverTag(drv) {
   const major = parseInt(String(drv || "").split(".")[0], 10);
   if (!major) return "";
-  return major >= 580 ? `<span class="tag good">驱动 ≥ 580</span>` : `<span class="tag bad">驱动低于 580（2.x 的布料任务要 ≥ 580）</span>`;
+  return major >= 580 ? `<span class="tag good">driver ≥ 580</span>` : `<span class="tag bad">driver below 580 (the 2.x cloth tasks need ≥ 580)</span>`;
 }
 
 function renderHosts() {
   const groups = latestByHelper();
   const names = Object.keys(groups);
   if (!names.length) {
-    $("#hosts").innerHTML = `<div class="panel empty-state"><b>还没有任何上传，所以 GPU 型号和运行方式都还不知道。</b>
-      <span>第一次上传后，这里会显示 MANIFEST.md 里的内容：GPU 型号、数量和驱动版本，CPU 型号、核数和内存，docker、Harbor、镜像版本，运行器的 agent、model、effort、模式、是否开网页搜索、用量网关，以及 batch 日志里的并行 runner 数和并发数。</span></div>`;
+    $("#hosts").innerHTML = `<div class="panel empty-state"><b>No delivery yet, so the GPU model and the way the runs are set up are still unknown.</b>
+      <span>After the first delivery this shows its MANIFEST.md: GPU model, count and driver; CPU model, cores and memory; docker, Harbor and image versions; the runner's agent, model, effort, modes, web search and usage gateway; and, from the batch log, the number of parallel runners and the concurrency.</span></div>`;
     return;
   }
   $("#hosts").innerHTML = names.map((h) => {
@@ -328,32 +328,32 @@ function renderHosts() {
     const machines = new Set(all.map((x) => `${x.manifest?.host?.cpu_model || "?"} · ${(x.manifest?.gpus || []).map((g) => g.name).join("+") || "?"}`));
     const log = b.log || {};
     return `<article class="panel host">
-      <div class="host-head"><h3>${esc(h)}</h3><span class="small muted">最近一次上传 ${when(b.uploaded_at)}：<code>${esc(b.batch)}/${esc(b.bundle)}</code>${b.pending ? "（日志待解析）" : ""}</span></div>
-      <div class="gpu-line">${gpuNames.length ? gpuNames.map(([n, c]) => `<span class="gpu">${c} × ${esc(n)}</span>`).join("") : `<span class="muted">MANIFEST 里没有 GPU 信息</span>`}
-        ${gpus[0] ? `<span class="chip">驱动 ${esc(gpus[0].driver)}</span>${driverTag(gpus[0].driver)}` : ""}</div>
+      <div class="host-head"><h3>${esc(h)}</h3><span class="small muted">latest delivery ${when(b.uploaded_at)}: <code>${esc(b.batch)}/${esc(b.bundle)}</code>${b.pending ? " (awaiting digest)" : ""}</span></div>
+      <div class="gpu-line">${gpuNames.length ? gpuNames.map(([n, c]) => `<span class="gpu">${c} × ${esc(n)}</span>`).join("") : `<span class="muted">no GPU line in MANIFEST.md</span>`}
+        ${gpus[0] ? `<span class="chip">driver ${esc(gpus[0].driver)}</span>${driverTag(gpus[0].driver)}` : ""}</div>
       <div class="two">
         <dl class="kv">
-          <dt>CPU</dt><dd>${m.host ? `${esc(m.host.cpu_model)}，${m.host.cpus} 核` : "–"}</dd>
-          <dt>内存</dt><dd>${m.host ? `${m.host.ram_gb} GB` : "–"}</dd>
-          <dt>软件</dt><dd>${esc(raw.software || "–")}</dd>
-          <dt>代码</dt><dd class="mono">${esc(raw.repo || "–")}</dd>
-          <dt>镜像</dt><dd class="mono small">${esc(raw.images || "–").replace(/\n/g, "<br>")}</dd>
+          <dt>CPU</dt><dd>${m.host ? `${esc(m.host.cpu_model)}, ${m.host.cpus} CPUs` : "–"}</dd>
+          <dt>Memory</dt><dd>${m.host ? `${m.host.ram_gb} GB` : "–"}</dd>
+          <dt>Software</dt><dd>${esc(raw.software || "–")}</dd>
+          <dt>Code</dt><dd class="mono">${esc(raw.repo || "–")}</dd>
+          <dt>Images</dt><dd class="mono small">${esc(raw.images || "–").replace(/\n/g, "<br>")}</dd>
         </dl>
         <dl class="kv">
-          <dt>harness</dt><dd>${esc(r.agent || "–")}</dd>
-          <dt>model</dt><dd>${esc(r.model || "–")}</dd>
-          <dt>effort</dt><dd>${esc(r.effort || "–")}</dd>
-          <dt>run id</dt><dd class="mono">${esc(b.run_id || r.run_id || "–")}</dd>
-          <dt>模式</dt><dd>${esc((r.modes || []).join(" + ") || "–")}</dd>
-          <dt>网页搜索</dt><dd>${esc(r.web_search || "–")}</dd>
-          <dt>用量网关</dt><dd>${esc(r.usage_gateway || "–")}</dd>
-          <dt>并行</dt><dd>${log.lanes ? `${log.lanes} 个 runner，每个 Harbor job 并发 ${log.concurrency_max ?? "–"}` : (b.pending ? "日志待解析" : "–")}</dd>
-          <dt>每任务局数</dt><dd>${m.K ? `K = ${m.K}` : "–"}</dd>
-          <dt>本批局数</dt><dd>${m.trials ? `计划 ${esc(m.trials.planned_jobs)} 个 job，${esc(m.trials.trial_dirs)} 个 trial 目录，${esc(m.trials.with_verdict)} 个有判定` : "–"}</dd>
+          <dt>Harness</dt><dd>${esc(r.agent || "–")}</dd>
+          <dt>Model</dt><dd>${esc(r.model || "–")}</dd>
+          <dt>Effort</dt><dd>${esc(r.effort || "–")}</dd>
+          <dt>Run id</dt><dd class="mono">${esc(b.run_id || r.run_id || "–")}</dd>
+          <dt>Modes</dt><dd>${esc((r.modes || []).join(" + ") || "–")}</dd>
+          <dt>Web search</dt><dd>${esc(r.web_search || "–")}</dd>
+          <dt>Usage gateway</dt><dd>${esc(r.usage_gateway || "–")}</dd>
+          <dt>Parallelism</dt><dd>${log.lanes ? `${log.lanes} runner(s), concurrency ${log.concurrency_max ?? "–"} per Harbor job` : (b.pending ? "awaiting digest" : "–")}</dd>
+          <dt>Trials per task</dt><dd>${m.K ? `K = ${m.K}` : "–"}</dd>
+          <dt>This batch</dt><dd>${m.trials ? `${esc(m.trials.planned_jobs)} jobs planned, ${esc(m.trials.trial_dirs)} trial dirs, ${esc(m.trials.with_verdict)} with a verdict` : "–"}</dd>
         </dl>
       </div>
-      ${raw.notes && raw.notes !== "none" ? `<div class="small"><b>上传者备注：</b>${esc(raw.notes)}</div>` : ""}
-      ${machines.size > 1 ? `<div class="small muted">这个上传者用过 ${machines.size} 种机器：${[...machines].map(esc).join("；")}</div>` : ""}
+      ${raw.notes && raw.notes !== "none" ? `<div class="small"><b>Helper's notes: </b>${esc(raw.notes)}</div>` : ""}
+      ${machines.size > 1 ? `<div class="small muted">This helper used ${machines.size} machines: ${[...machines].map(esc).join("; ")}</div>` : ""}
     </article>`;
   }).join("");
 }
@@ -362,8 +362,8 @@ function machineClass(task) { return task.material === "rigid" ? "shared" : "exc
 
 function renderMachines() {
   const SPEC = {
-    shared: { title: "刚体任务", rule: "一块 GPU 同时跑 4 局；每局至少分配 2 个 CPU 核 + 4 GB 内存" },
-    exclusive: { title: "可形变任务（绳、布料、线缆、纤维）", rule: "每局独占一块 GPU；每局至少分配 4 个 CPU 核 + 8 GB 内存" },
+    shared: { title: "Rigid tasks", rule: "4 trials share one GPU; each trial gets at least 2 CPU cores + 4 GB memory" },
+    exclusive: { title: "Deformable tasks (rope, cloth, cable, fiber)", rule: "each trial has a GPU to itself; each trial gets at least 4 CPU cores + 8 GB memory" },
   };
   const K = S.model.K;
   const trialsBy = { shared: [], exclusive: [] };
@@ -383,10 +383,10 @@ function renderMachines() {
       <div class="big">${spec.title}</div>
       <div>${esc(spec.rule)}</div>
       <dl class="kv">
-        <dt>底档</dt><dd>${tasks.length} 个，每个组合 ${tasks.length * MODES.length * K} 局</dd>
-        <dt>族</dt><dd><div class="chips">${fams.map((f) => `<span class="chip">${esc(f)}</span>`).join("")}</div></dd>
-        <dt>task.toml 上限</dt><dd><div class="chips">${caps}</div><div class="small faint">容器能用的上限（超过会被限流或杀掉），不是预留。</div></dd>
-        <dt>实测峰值</dt><dd>${measured ? `内存最高 ${pm?.toFixed(1)} GB，显存最高 ${pg?.toFixed(1) ?? "–"} GB（${measured} 局有记录）${ooms ? `；<span class="tag bad">${ooms} 次 OOM 或紧急终止</span>` : ""}` : `<span class="faint">还没有解析过的局</span>`}</dd>
+        <dt>Bases</dt><dd>${tasks.length}, ${tasks.length * MODES.length * K} trials per pair</dd>
+        <dt>Families</dt><dd><div class="chips">${fams.map((f) => `<span class="chip">${esc(f)}</span>`).join("")}</div></dd>
+        <dt>task.toml caps</dt><dd><div class="chips">${caps}</div><div class="small faint">Upper limits for the container (throttled or killed above them), not reservations.</div></dd>
+        <dt>Measured peaks</dt><dd>${measured ? `memory up to ${pm?.toFixed(1)} GB, GPU memory up to ${pg?.toFixed(1) ?? "–"} GB (${measured} trials recorded)${ooms ? `; <span class="tag bad">${ooms} OOM or emergency kills</span>` : ""}` : `<span class="faint">no digested trials yet</span>`}</dd>
       </dl>
     </article>`;
   }).join("");
@@ -400,7 +400,7 @@ function pairLabel(id) {
 function renderBundles() {
   const bs = S.model.bundles;
   if (!bs.length) {
-    $("#bundles").innerHTML = `<div class="panel empty-state"><b>数据集里还没有上传包。</b><span>数据集 <a href="${HF}/datasets/${esc(S.dataset)}" target="_blank" rel="noopener">${esc(S.dataset)}</a> 目前${S.live.info ? `只有 ${S.live.info.siblings?.length ?? 0} 个文件，最后更新 ${when(S.live.info.lastModified)}` : "还读不到"}。上传后（直接提交或 pull request）这里会在下次刷新时出现。</span></div>`;
+    $("#bundles").innerHTML = `<div class="panel empty-state"><b>No deliveries in the dataset yet.</b><span>The dataset <a href="${HF}/datasets/${esc(S.dataset)}" target="_blank" rel="noopener">${esc(S.dataset)}</a> ${S.live.info ? `holds ${S.live.info.siblings?.length ?? 0} file(s), last updated ${when(S.live.info.lastModified)}` : "could not be read yet"}. A delivery (a direct commit or a pull request) shows up here at the next refresh.</span></div>`;
     return;
   }
   const counts = (key) => {
@@ -410,12 +410,12 @@ function renderBundles() {
     return c;
   };
   $("#bundles").innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>上传时间</th><th>上传者</th><th>batch / bundle</th><th>来源</th><th>组合</th><th>局数</th><th>成功 / 失败 / 不算 / 待解析</th><th>状态</th></tr></thead>
+    <thead><tr><th>Delivered</th><th>Helper</th><th>batch / bundle</th><th>Source</th><th>Pair</th><th>Trials</th><th>Success / fail / void / awaiting</th><th>State</th></tr></thead>
     <tbody>${bs.map((b) => {
       const c = counts(b.key);
       const pair = pairOf(b, null);
-      const state = b.gone ? `<span class="pill fail">已从数据集删除</span>` : b.pending ? `<span class="pill wait">待解析</span>`
-        : b.errors?.length ? `<span class="pill void" title="${esc(b.errors.join("\n"))}">解析有问题</span>` : `<span class="pill ok">已解析</span>`;
+      const state = b.gone ? `<span class="pill fail">removed from the dataset</span>` : b.pending ? `<span class="pill wait">awaiting digest</span>`
+        : b.errors?.length ? `<span class="pill void" title="${esc(b.errors.join("\n"))}">digest problems</span>` : `<span class="pill ok">digested</span>`;
       return `<tr class="clickable" data-bundle="${esc(b.key)}" tabindex="0">
         <td class="nowrap">${when(b.uploaded_at)}</td><td>${esc(b.helper)}</td>
         <td class="mono">${esc(b.batch)}<br><span class="faint">${esc(b.bundle)}</span></td>
@@ -444,33 +444,33 @@ function renderErrors() {
   const sel = $("#err-target");
   const pairsSeen = [...new Set(rows.map((r) => r.t.pair))];
   const keep = sel.value || "all";
-  sel.innerHTML = `<option value="all">全部</option>` + pairsSeen.map((p) => `<option value="${esc(p)}">${esc(pairLabel(p))}</option>`).join("");
+  sel.innerHTML = `<option value="all">All</option>` + pairsSeen.map((p) => `<option value="${esc(p)}">${esc(pairLabel(p))}</option>`).join("");
   sel.value = pairsSeen.includes(keep) ? keep : "all";
   const kind = $("#err-kind").value;
   const TODO = ["void", "no_verdict", "exception"];
   const match = (r) => kind === "all" || (kind === "todo" ? r.kinds.some((k) => TODO.includes(k)) : r.kinds.includes(kind));
   const shown = rows.filter((r) => (sel.value === "all" || r.t.pair === sel.value) && match(r));
 
-  const why = (t) => t.reason || (t.exception_type !== "AgentTimeoutError" && t.exception_type) || (t.result === "no_verdict" ? "没有判定（评分器没跑完）" : "")
-    || (t.status === "wait" ? "日志待解析" : "") || "重跑过";
+  const why = (t) => t.reason || (t.exception_type !== "AgentTimeoutError" && t.exception_type) || (t.result === "no_verdict" ? "no verdict (the grader did not finish)" : "")
+    || (t.status === "wait" ? "awaiting digest" : "") || "rerun";
   const tally = {};
   shown.forEach((r) => { const k = why(r.t); tally[k] = (tally[k] || 0) + 1; });
   $("#error-kinds").innerHTML = Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 14)
     .map(([k, n]) => `<span class="chip" title="${esc(k)}">${esc(k.length > 70 ? k.slice(0, 70) + "…" : k)} · ${n}</span>`).join("");
 
   if (!rows.length) {
-    $("#error-table").innerHTML = `<div class="panel empty-state"><b>还没有出错或重跑的局。</b><span>有上传后，这里列出不算结果的局（例如 API 断连、容器起不来、评分器出错，按协议要用同一个种子重跑一次）、没有判定的局、Harbor 报了异常的局，以及同一局跑过不止一次的记录。</span></div>`;
+    $("#error-table").innerHTML = `<div class="panel empty-state"><b>No failed or rerun trials yet.</b><span>Once deliveries arrive, this lists trials that are not a result (an API disconnect, a container that never started, a grader error: the protocol reruns them once with the same seed), trials without a verdict, trials with a Harbor exception, and trials run more than once.</span></div>`;
     return;
   }
-  if (!shown.length) { $("#error-table").innerHTML = `<div class="panel empty-state"><span>没有符合筛选条件的局（共 ${rows.length} 条记录，换个类型看看）。</span></div>`; return; }
+  if (!shown.length) { $("#error-table").innerHTML = `<div class="panel empty-state"><span>No trial matches this filter (${rows.length} records in all).</span></div>`; return; }
   $("#error-table").innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>时间</th><th>组合</th><th>底档</th><th>模式</th><th>局 / 种子</th><th>结果</th><th>原因 / 异常</th><th>内存峰值</th><th>上传包</th></tr></thead>
+    <thead><tr><th>Time</th><th>Pair</th><th>Base</th><th>Mode</th><th>Trial / seed</th><th>Result</th><th>Reason / exception</th><th>Peak memory</th><th>Batch</th></tr></thead>
     <tbody>${shown.slice(0, 400).map(({ t, kinds }) => `<tr class="clickable" data-trial="${esc(t.bundle)}|${esc(t.job)}|${esc(t.trial_dir)}" tabindex="0">
       <td class="nowrap">${when(t.when)}</td><td>${esc(pairLabel(t.pair))}</td><td class="mono">${esc(t.base || "?")}</td><td>${esc(t.mode || "?")}</td>
-      <td class="mono">${t.k ?? "?"} / ${t.seed ?? "?"}</td><td><span class="pill ${t.status}">${STATUS_ZH[t.status]}</span>${kinds.includes("rerun") ? ` <span class="tag">重跑过</span>` : ""}</td>
+      <td class="mono">${t.k ?? "?"} / ${t.seed ?? "?"}</td><td><span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span>${kinds.includes("rerun") ? ` <span class="tag">rerun</span>` : ""}</td>
       <td>${esc(why(t))}</td><td class="mono">${typeof t.peak_memory_gb === "number" ? t.peak_memory_gb.toFixed(1) + " GB" : "–"}</td>
       <td class="mono small nowrap">${esc(S.model.bmap[t.bundle]?.batch || "")}</td></tr>`).join("")}</tbody></table></div>
-    ${shown.length > 400 ? `<p class="small muted">只列出最近 400 条（共 ${shown.length} 条）。</p>` : ""}`;
+    ${shown.length > 400 ? `<p class="small muted">Showing the latest 400 of ${shown.length}.</p>` : ""}`;
 }
 
 function renderMatrix() {
@@ -478,7 +478,7 @@ function renderMatrix() {
   const onlyIncomplete = $("#mx-incomplete").checked;
   const K = S.model.K;
   const cols = S.targets;
-  const head = `<div class="mrow head" style="--cols:${cols.length}"><div>底档</div>${cols.map((t) => `<div title="${esc(t.harness)} + ${esc(t.model)}">${esc(t.harness)}<br>${esc(t.model)}</div>`).join("")}</div>`;
+  const head = `<div class="mrow head" style="--cols:${cols.length}"><div>Base</div>${cols.map((t) => `<div title="${esc(t.harness)} + ${esc(t.model)}">${esc(t.harness)}<br>${esc(t.model)}</div>`).join("")}</div>`;
   let html = head;
   for (const cat of S.tasks.categories) {
     if (mat !== "all" && cat.material !== mat) continue;
@@ -495,7 +495,7 @@ function renderMatrix() {
             const st = e ? e.final.status : "empty";
             if (st !== "ok" && st !== "fail") complete = false;
             const seed = e?.final.seed ?? "?";
-            const tip = `${task.base} · ${c.harness} + ${c.model}\n${m} 第 ${i + 1} 局（种子 ${seed}）：${STATUS_ZH[st]}${e && e.attempts.length > 1 ? `，跑过 ${e.attempts.length} 次` : ""}${e?.final.reason ? `\n${e.final.reason}` : ""}`;
+            const tip = `${task.base} · ${c.harness} + ${c.model}\n${m} trial ${i + 1} (seed ${seed}): ${STATUS_LABEL[st]}${e && e.attempts.length > 1 ? `, ${e.attempts.length} attempts` : ""}${e?.final.reason ? `\n${e.final.reason}` : ""}`;
             return `<span class="cell ${st === "empty" ? "" : st}" title="${esc(tip)}"${e ? ` data-trial="${esc(e.final.bundle)}|${esc(e.final.job)}|${esc(e.final.trial_dir)}"` : ""}></span>`;
           }).join("")).join("");
           return `<div class="mcell">${sq}</div>`;
@@ -506,7 +506,7 @@ function renderMatrix() {
       }
       if (famHtml) catHtml += `<div class="mrow fam"><div>${esc(S.tasks.tasks.find((t) => t.family === fam).family_name)}</div></div>${famHtml}`;
     }
-    if (catHtml) html += `<div class="mrow group"><div>${cat.material === "rigid" ? "刚体" : "可形变"} · ${esc(cat.name)}</div></div>${catHtml}`;
+    if (catHtml) html += `<div class="mrow group"><div>${cat.material === "rigid" ? "Rigid" : "Deformable"} · ${esc(cat.name)}</div></div>${catHtml}`;
   }
   $("#matrix-grid").innerHTML = html;
 }
@@ -516,14 +516,14 @@ function renderFrames() {
   const byFam = {};
   for (const t of S.tasks.tasks) if (fam === "all" || t.family === fam) (byFam[t.family] ||= []).push(t);
   const nFrames = Object.values(S.frames).reduce((a, x) => a + Object.keys(x).length, 0);
-  $("#frame-list").innerHTML = (nFrames ? "" : `<div class="panel empty-state"><b>首帧还没有渲染。</b><span>每个底档每个允许的种子一张 cam_high 出生画面，共 ${S.tasks.tasks.reduce((a, t) => a + t.seeds.length, 0)} 张；渲染后放进 <code>frames/</code> 并登记在 <code>data/frames.json</code>。</span></div>`) +
-    Object.entries(byFam).map(([f, tasks]) => `<div class="frame-fam"><h3>${esc(tasks[0].family_name)} <span class="small muted">${tasks[0].material === "rigid" ? "刚体" : "可形变"} · ${tasks.length} 个底档</span></h3>
+  $("#frame-list").innerHTML = (nFrames ? "" : `<div class="panel empty-state"><b>First frames are not rendered yet.</b><span>One cam_high birth frame per base and allowed seed, ${S.tasks.tasks.reduce((a, t) => a + t.seeds.length, 0)} in all; renders go into <code>frames/</code> and are listed in <code>data/frames.json</code>.</span></div>`) +
+    Object.entries(byFam).map(([f, tasks]) => `<div class="frame-fam"><h3>${esc(tasks[0].family_name)} <span class="small muted">${tasks[0].material === "rigid" ? "rigid" : "deformable"} · ${tasks.length} bases</span></h3>
       <div class="frame-grid">${tasks.map((t) => `<div class="panel frame-task"><div class="t"><span>${esc(t.base.replace(/^roboarc-/, ""))}</span><span class="faint">${esc(t.difficulty)}</span></div>
         <div class="seeds">${[0, 1, 2].map((s) => {
           const src = S.frames[t.base]?.[String(s)];
           const allowed = t.seeds.includes(s);
-          const body = !allowed ? `<div class="ph">只允许种子 0</div>` : src ? `<img src="${esc(src)}" alt="${esc(t.base)} 种子 ${s} 首帧" loading="lazy" width="848" height="480">` : `<div class="ph">未渲染</div>`;
-          return `<div class="seed">${body}<div class="lbl">种子 ${s}</div></div>`;
+          const body = !allowed ? `<div class="ph">seed 0 only</div>` : src ? `<img src="${esc(src)}" alt="${esc(t.base)} seed ${s} first frame" loading="lazy" width="848" height="480">` : `<div class="ph">not rendered</div>`;
+          return `<div class="seed">${body}<div class="lbl">seed ${s}</div></div>`;
         }).join("")}</div></div>`).join("")}</div></div>`).join("");
 }
 
@@ -532,19 +532,19 @@ function renderStatus() {
   const live = S.live;
   const nPending = live.bundles.length;
   $("#live-status").innerHTML = live.error
-    ? `<span class="dot err"></span>读取 Hugging Face 失败：${esc(live.error)}（下面是上次解析的结果）`
+    ? `<span class="dot err"></span>Could not read Hugging Face: ${esc(live.error)} (showing the last digest)`
     : live.at
-      ? `<span class="dot live"></span>Hugging Face：数据集更新于 <b>${when(live.info?.lastModified)}</b>，${live.listed?.length ?? 0} 个上传包${nPending ? `，其中 ${nPending} 个日志待解析` : ""}；${when(live.at)}读取`
-      : `<span class="dot"></span>正在读取 Hugging Face…`;
-  $("#digest-status").innerHTML = d.generated_at ? `日志解析于 ${when(d.generated_at)}` : "日志还没有解析过";
-  $("#release").textContent = `RoboARC ${S.tasks.release} · ${S.tasks.tasks.length} 个底档`;
-  $("#foot-release").innerHTML = `任务表来自 RoboARC ${esc(S.tasks.release)}（<code>${esc(S.tasks.commit)}</code>）的 tasks/；组合列表见 <code>data/targets.json</code>。`;
+      ? `<span class="dot live"></span>Hugging Face: dataset updated <b>${when(live.info?.lastModified)}</b>, ${live.listed?.length ?? 0} deliveries${nPending ? `, ${nPending} awaiting digest` : ""}; read ${when(live.at)}`
+      : `<span class="dot"></span>Reading Hugging Face…`;
+  $("#digest-status").innerHTML = d.generated_at ? `logs digested ${when(d.generated_at)}` : "logs not digested yet";
+  $("#release").textContent = `RoboARC ${S.tasks.release} · ${S.tasks.tasks.length} bases`;
+  $("#foot-release").innerHTML = `Task list from tasks/ of RoboARC ${esc(S.tasks.release)} (<code>${esc(S.tasks.commit)}</code>); the pairs are in <code>data/targets.json</code>.`;
 }
 
 function render() {
   if (!S.tasks) return;
   buildModel();
-  if (!OFFLINE) renderStatus(); else { $("#digest-status").innerHTML = S.digest.generated_at ? `日志解析于 ${when(S.digest.generated_at)}` : ""; $("#release").textContent = `RoboARC ${S.tasks.release} · ${S.tasks.tasks.length} 个底档`; }
+  if (!OFFLINE) renderStatus(); else { $("#digest-status").innerHTML = S.digest.generated_at ? `logs digested ${when(S.digest.generated_at)}` : ""; $("#release").textContent = `RoboARC ${S.tasks.release} · ${S.tasks.tasks.length} bases`; }
   renderCards();
   renderHosts();
   renderMachines();
@@ -560,7 +560,7 @@ function openDrawer(title, sub, bodyHtml) {
   const prev = document.activeElement;
   root.innerHTML = `<div class="drawer-backdrop" data-close></div>
     <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
-      <header><div><h3 id="drawer-title">${title}</h3><div class="small muted">${sub}</div></div><button class="btn" type="button" data-close>关闭</button></header>
+      <header><div><h3 id="drawer-title">${title}</h3><div class="small muted">${sub}</div></div><button class="btn" type="button" data-close>Close</button></header>
       <div class="body">${bodyHtml}</div></aside>`;
   const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); prev?.focus?.(); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
@@ -585,22 +585,22 @@ async function openBundle(key) {
   const b = S.model.bmap[key];
   if (!b) return;
   const body = openDrawer(`${esc(b.batch)} <span class="faint">/ ${esc(b.bundle)}</span>`,
-    `${esc(b.helper)} · ${esc(b.source)} · 上传于 ${esc(abs(b.uploaded_at))}${b.url ? ` · <a href="${esc(b.url)}" target="_blank" rel="noopener">在 Hugging Face 打开</a>` : ""}`, `<p class="muted">读取中…</p>`);
+    `${esc(b.helper)} · ${esc(b.source)} · delivered ${esc(abs(b.uploaded_at))}${b.url ? ` · <a href="${esc(b.url)}" target="_blank" rel="noopener">open on Hugging Face</a>` : ""}`, `<p class="muted">Loading…</p>`);
   const d = await bundleDetail(b);
   const raw = b.manifest_fields || {};
   let html = "";
-  if (b.errors?.length) html += `<div><h4>解析时的问题</h4>${pre(b.errors)}</div>`;
-  html += `<div><h4>运行设置</h4><dl class="kv">
-    <dt>组合</dt><dd>${esc(pairLabel(pairOf(b, null)))}</dd><dt>run id</dt><dd class="mono">${esc(b.run_id || "–")}</dd>
-    <dt>局数</dt><dd>${b.trials}（${b.jobs} 个 job）</dd>
-    ${b.log ? `<dt>batch 日志</dt><dd>${esc(b.log.first || "")} → ${esc(b.log.last || "")}，${b.log.lanes} 个 runner，并发 ${b.log.concurrency_max ?? "–"}</dd>` : ""}
+  if (b.errors?.length) html += `<div><h4>Digest problems</h4>${pre(b.errors)}</div>`;
+  html += `<div><h4>Run settings</h4><dl class="kv">
+    <dt>Pair</dt><dd>${esc(pairLabel(pairOf(b, null)))}</dd><dt>Run id</dt><dd class="mono">${esc(b.run_id || "–")}</dd>
+    <dt>Trials</dt><dd>${b.trials} (${b.jobs} jobs)</dd>
+    ${b.log ? `<dt>Batch log</dt><dd>${esc(b.log.first || "")} → ${esc(b.log.last || "")}, ${b.log.lanes} runner(s), concurrency ${b.log.concurrency_max ?? "–"}</dd>` : ""}
     ${Object.entries(raw).filter(([k]) => ["notes", "mirror", "results"].includes(k)).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}
   </dl></div>`;
   if (d?.manifest_text) html += `<div><h4>MANIFEST.md</h4>${pre(d.manifest_text)}</div>`;
   else if (b.pending) html += `<div><h4>MANIFEST.md</h4>${pre(Object.entries(raw).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div>`;
-  if (d?.log_notable?.length) html += `<div><h4>batch 日志里的报错和重跑行</h4>${pre(d.log_notable)}</div>`;
-  if (d?.summary_md) html += `<details><summary class="small">batch 汇总表（${esc(b.batch)}.summary.md）</summary>${pre(d.summary_md)}</details>`;
-  if (b.pending) html += `<p class="small muted">这个包的日志还没有被定时任务解析，下次解析后会显示官方判定、异常和资源峰值。</p>`;
+  if (d?.log_notable?.length) html += `<div><h4>Error and rerun lines of the batch log</h4>${pre(d.log_notable)}</div>`;
+  if (d?.summary_md) html += `<details><summary class="small">Batch summary (${esc(b.batch)}.summary.md)</summary>${pre(d.summary_md)}</details>`;
+  if (b.pending) html += `<p class="small muted">This delivery is not digested yet; the next digest adds the official results, the exceptions and the resource peaks.</p>`;
   body.innerHTML = html;
 }
 
@@ -610,35 +610,35 @@ async function openTrial(ref) {
   const b = S.model.bmap[bkey];
   if (!t || !b) return;
   const slot = S.model.eff[`${t.pair}|${t.base}|${t.mode}|${t.k}`];
-  const body = openDrawer(`${esc(t.base || "?")} <span class="faint">· ${esc(t.mode || "?")} 第 ${t.k ?? "?"} 局</span>`,
-    `${esc(pairLabel(t.pair))} · 种子 ${t.seed ?? "?"} · <code>${esc(t.trial_dir)}</code>`, `<p class="muted">读取中…</p>`);
+  const body = openDrawer(`${esc(t.base || "?")} <span class="faint">· ${esc(t.mode || "?")} trial ${t.k ?? "?"}</span>`,
+    `${esc(pairLabel(t.pair))} · seed ${t.seed ?? "?"} · <code>${esc(t.trial_dir)}</code>`, `<p class="muted">Loading…</p>`);
   const d = (await bundleDetail(b))?.trials?.[`${job}/${trialDir}`];
   const kv = [
-    ["结果", `<span class="pill ${t.status}">${STATUS_ZH[t.status]}</span>${t.result_source === "index" ? " <span class=\"small muted\">（只看了 index.json）</span>" : ""}`],
-    ["原因", esc(t.reason || "–")], ["reward", esc(t.reward ?? "–")], ["Harbor 异常", esc(t.exception_type || (t.exception ? "有（待解析）" : "无"))],
-    ["用时", t.wall_s != null ? `${Math.round(t.wall_s / 60)} 分钟` : "–"], ["token（输入 / 输出）", `${fmtInt(t.tokens_in)} / ${fmtInt(t.tokens_out)}`],
-    ["费用", t.cost_usd != null ? `$${Number(t.cost_usd).toFixed(2)}` : "–"],
-    ["内存 / 显存峰值", `${typeof t.peak_memory_gb === "number" ? t.peak_memory_gb.toFixed(2) : "–"} GB / ${typeof t.peak_gpu_memory_gb === "number" ? t.peak_gpu_memory_gb.toFixed(2) : "–"} GB`],
-    ["OOM 或紧急终止", esc(t.oom_kills ?? "–")], ["harbor 退出码", esc(t.harbor_rc ?? "–")],
-    ["这一局跑过", slot ? `${slot.attempts.length} 次${t.attempts_over_cap ? "（超过上限）" : ""}` : "–"],
+    ["Result", `<span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span>${t.result_source === "index" ? " <span class=\"small muted\">(from index.json only)</span>" : ""}`],
+    ["Reason", esc(t.reason || "–")], ["Reward", esc(t.reward ?? "–")], ["Harbor exception", esc(t.exception_type || (t.exception ? "yes (awaiting digest)" : "none"))],
+    ["Wall time", t.wall_s != null ? `${Math.round(t.wall_s / 60)} min` : "–"], ["Tokens (in / out)", `${fmtInt(t.tokens_in)} / ${fmtInt(t.tokens_out)}`],
+    ["Cost", t.cost_usd != null ? `$${Number(t.cost_usd).toFixed(2)}` : "–"],
+    ["Peak memory / GPU memory", `${typeof t.peak_memory_gb === "number" ? t.peak_memory_gb.toFixed(2) : "–"} GB / ${typeof t.peak_gpu_memory_gb === "number" ? t.peak_gpu_memory_gb.toFixed(2) : "–"} GB`],
+    ["OOM or emergency kills", esc(t.oom_kills ?? "–")], ["Harbor exit code", esc(t.harbor_rc ?? "–")],
+    ["Attempts", slot ? `${slot.attempts.length}${t.attempts_over_cap ? " (over the cap)" : ""}` : "–"],
   ];
   let html = `<dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
   if (slot && slot.attempts.length > 1) {
-    html += `<div><h4>同一局的所有尝试</h4><div class="table-wrap"><table><thead><tr><th>时间</th><th>结果</th><th>原因</th><th>上传包</th></tr></thead><tbody>${slot.attempts.map((a) =>
-      `<tr><td class="nowrap">${esc(abs(a.when))}</td><td><span class="pill ${a.status}">${STATUS_ZH[a.status]}</span></td><td>${esc(a.reason || a.exception_type || "")}</td><td class="mono small">${esc(S.model.bmap[a.bundle]?.batch || "")}</td></tr>`).join("")}</tbody></table></div></div>`;
+    html += `<div><h4>All attempts of this trial</h4><div class="table-wrap"><table><thead><tr><th>Time</th><th>Result</th><th>Reason</th><th>Batch</th></tr></thead><tbody>${slot.attempts.map((a) =>
+      `<tr><td class="nowrap">${esc(abs(a.when))}</td><td><span class="pill ${a.status}">${STATUS_LABEL[a.status]}</span></td><td>${esc(a.reason || a.exception_type || "")}</td><td class="mono small">${esc(S.model.bmap[a.bundle]?.batch || "")}</td></tr>`).join("")}</tbody></table></div></div>`;
   }
   if (d) {
-    if (d.exception_message) html += `<div><h4>异常信息（result.json）</h4>${pre(d.exception_message)}</div>`;
-    if (d.exception_tail) html += `<div><h4>exception.txt 末尾</h4>${pre(d.exception_tail)}</div>`;
-    if (d.grade_tail && d.grade_tail.join("").trim()) html += `<div><h4>评分日志 verifier/grade.log 末尾</h4>${pre(d.grade_tail)}</div>`;
-    if (d.trial_tail) html += `<div><h4>trial.log 末尾</h4>${pre(d.trial_tail)}</div>`;
-    if (d.reward) html += `<details><summary class="small">评分字段 verifier/reward.json</summary>${jsonPre(d.reward)}</details>`;
-    if (d.resource_limits) html += `<details><summary class="small">资源上限 verifier/resource_limits.json</summary>${jsonPre(d.resource_limits)}</details>`;
-    if (d.gateway_totals) html += `<details><summary class="small">用量网关 gateway/totals.json</summary>${jsonPre(d.gateway_totals)}</details>`;
+    if (d.exception_message) html += `<div><h4>Exception (result.json)</h4>${pre(d.exception_message)}</div>`;
+    if (d.exception_tail) html += `<div><h4>End of exception.txt</h4>${pre(d.exception_tail)}</div>`;
+    if (d.grade_tail && d.grade_tail.join("").trim()) html += `<div><h4>End of the grader log, verifier/grade.log</h4>${pre(d.grade_tail)}</div>`;
+    if (d.trial_tail) html += `<div><h4>End of trial.log</h4>${pre(d.trial_tail)}</div>`;
+    if (d.reward) html += `<details><summary class="small">Grader fields, verifier/reward.json</summary>${jsonPre(d.reward)}</details>`;
+    if (d.resource_limits) html += `<details><summary class="small">Resource limits, verifier/resource_limits.json</summary>${jsonPre(d.resource_limits)}</details>`;
+    if (d.gateway_totals) html += `<details><summary class="small">Usage gateway, gateway/totals.json</summary>${jsonPre(d.gateway_totals)}</details>`;
   }
   const archUrl = b.revision === "local" ? null : hfResolve(b.revision, t.archive);
-  html += `<div><h4>完整日志包</h4><p class="small muted">从 Hugging Face 下载这一局的 job 包（<code>${esc(t.archive.split("/").pop())}</code>），在浏览器里解压，显示 exception.txt、trial.log、评分日志和 agent 日志的末尾。</p>
-    <div class="chips" style="margin-top:6px">${archUrl ? `<button class="btn" type="button" id="load-archive">在页面里读取</button><a class="btn" href="${esc(archUrl)}" target="_blank" rel="noopener">下载 .tar.gz</a>` : "<span class=\"faint\">本地测试数据，没有下载地址</span>"}</div>
+  html += `<div><h4>Full logs</h4><p class="small muted">Downloads this trial's job archive (<code>${esc(t.archive.split("/").pop())}</code>) from Hugging Face and unpacks it in the browser: the end of exception.txt, trial.log, the grader log and the agent logs.</p>
+    <div class="chips" style="margin-top:6px">${archUrl ? `<button class="btn" type="button" id="load-archive">Read here</button><a class="btn" href="${esc(archUrl)}" target="_blank" rel="noopener">Download .tar.gz</a>` : "<span class=\"faint\">local test data: no download link</span>"}</div>
     <div id="archive-out"></div></div>`;
   body.innerHTML = html;
   body.querySelector("#load-archive")?.addEventListener("click", (e) => loadArchive(e.currentTarget, archUrl, job, trialDir));
@@ -703,24 +703,24 @@ async function untarGz(url, want, onProgress) {
 async function loadArchive(btn, url, job, trialDir) {
   const outEl = $("#archive-out");
   btn.disabled = true;
-  outEl.innerHTML = `<p class="small muted">下载并解压中…</p>`;
+  outEl.innerHTML = `<p class="small muted">Downloading and unpacking…</p>`;
   const MAX = 50 << 20;
   const marker = `/${job}/${trialDir}/`;
   const keep = (rel) => ["exception.txt", "trial.log", "result.json", "verifier/grade.log", "verifier/reward.json", "verifier/verdict.json"].includes(rel)
     || /^agent\/[^/]+\.(txt|log)$/.test(rel) || /^agent\/setup\/[^/]+\.(txt|log)$/.test(rel);
   try {
     const files = await untarGz(url, (name, size) => size <= MAX && name.includes(marker) && keep(name.split(marker)[1]),
-      (n) => { outEl.firstElementChild.textContent = `下载并解压中… 已解压 ${(n / 1048576).toFixed(1)} MB`; });
+      (n) => { outEl.firstElementChild.textContent = `Downloading and unpacking… ${(n / 1048576).toFixed(1)} MB unpacked`; });
     const names = Object.keys(files).sort();
-    if (!names.length) { outEl.innerHTML = `<p class="small muted">包里没有找到这一局的日志文件。</p>`; return; }
+    if (!names.length) { outEl.innerHTML = `<p class="small muted">No log file of this trial in the archive.</p>`; return; }
     const dec = new TextDecoder();
-    const view = (n) => { const lines = dec.decode(files[n]).split("\n"); return (lines.length > 400 ? [`…（前 ${lines.length - 400} 行省略）`, ...lines.slice(-400)] : lines).join("\n"); };
+    const view = (n) => { const lines = dec.decode(files[n]).split("\n"); return (lines.length > 400 ? [`… (${lines.length - 400} earlier lines left out)`, ...lines.slice(-400)] : lines).join("\n"); };
     outEl.innerHTML = `<div class="tabs" role="tablist">${names.map((n, i) => `<button type="button" role="tab" aria-selected="${i === 0}" data-file="${esc(n)}">${esc(n.split(marker)[1])}</button>`).join("")}</div><pre class="log" id="archive-view"></pre>`;
     const show = (n) => { $("#archive-view").textContent = view(n); outEl.querySelectorAll("[role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.file === n))); };
     outEl.querySelectorAll("[role=tab]").forEach((b) => b.addEventListener("click", () => show(b.dataset.file)));
     show(names[0]);
   } catch (e) {
-    outEl.innerHTML = `<p class="small" style="color:var(--fail)">读取失败：${esc(e.message)}。可以用“下载 .tar.gz”手动打开。</p>`;
+    outEl.innerHTML = `<p class="small" style="color:var(--fail)">Could not read it: ${esc(e.message)}. Use "Download .tar.gz" to open it yourself.</p>`;
     btn.disabled = false;
   }
 }
@@ -769,11 +769,11 @@ async function start() {
   wire();
   render();
   renderFrames();
-  if (OFFLINE) { $("#live-status").innerHTML = `<span class="dot"></span>离线模式：只显示 data/digest.json`; return; }
+  if (OFFLINE) { $("#live-status").innerHTML = `<span class="dot"></span>Offline mode: data/digest.json only`; return; }
   refreshLive();
   setInterval(() => { reloadDigest().then(refreshLive); }, LIVE_EVERY_MS);
 }
 
 start().catch((e) => {
-  $("#live-status").innerHTML = `<span class="dot err"></span>页面数据读取失败：${esc(e.message)}`;
+  $("#live-status").innerHTML = `<span class="dot err"></span>Could not load the page data: ${esc(e.message)}`;
 });

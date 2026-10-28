@@ -1,37 +1,37 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>RoboARC 运行进度</title>
-<meta name="description" content="RoboARC 2.x 外部评测运行的进度、运行环境、错误日志与首帧，数据实时读自 Hugging Face 数据集 RoboARC/RoboARC-outputs。">
+<title>RoboARC Run Progress</title>
+<meta name="description" content="Progress, machines, error logs and first frames of the external RoboARC 2.x runs, read live from the Hugging Face dataset RoboARC/RoboARC-outputs.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 <header class="wrap masthead">
   <div class="eyebrow" id="release">RoboARC</div>
-  <h1>RoboARC 运行进度</h1>
-  <p class="lead">每个 harness + model 组合要跑完 90 个底档 × 2 种模式（privileged / standard）× 3 局，共 540 局。页面打开时直接读取 Hugging Face 数据集里的上传，日志由定时任务解析。</p>
+  <h1>RoboARC Run Progress</h1>
+  <p class="lead">Each harness + model pair runs 90 task bases × 2 modes (privileged / standard) × 3 trials: 540 trials. The page reads the deliveries in the Hugging Face dataset every time it opens; a scheduled job digests their logs.</p>
   <div class="statusline">
-    <span id="live-status"><span class="dot"></span>正在读取 Hugging Face…</span>
+    <span id="live-status"><span class="dot"></span>Reading Hugging Face…</span>
     <span id="digest-status"></span>
-    <button class="btn" id="refresh" type="button">刷新</button>
+    <button class="btn" id="refresh" type="button">Refresh</button>
   </div>
 </header>
 
 <div class="navbar">
   <div class="wrap">
-    <nav aria-label="页面分区">
-      <a href="#progress">进度</a>
-      <a href="#setup">运行环境</a>
-      <a href="#machines">机器类型</a>
-      <a href="#uploads">上传记录</a>
-      <a href="#errors">错误与重跑</a>
-      <a href="#matrix">任务矩阵</a>
-      <a href="#frames">首帧</a>
+    <nav aria-label="Sections">
+      <a href="#progress">Progress</a>
+      <a href="#setup">Run setup</a>
+      <a href="#machines">Machine types</a>
+      <a href="#uploads">Deliveries</a>
+      <a href="#errors">Errors and reruns</a>
+      <a href="#matrix">Task matrix</a>
+      <a href="#frames">First frames</a>
     </nav>
   </div>
 </div>
@@ -39,13 +39,13 @@
 <main class="wrap">
   <section id="progress" aria-labelledby="h-progress">
     <div class="section-head">
-      <h2 id="h-progress">各组合进度</h2>
+      <h2 id="h-progress">Progress by harness + model</h2>
       <div class="legend">
-        <span><i class="sw ok"></i>成功</span>
-        <span><i class="sw fail"></i>失败（算结果）</span>
-        <span><i class="sw void"></i>不算结果，要重跑</span>
-        <span><i class="sw wait"></i>已上传，日志待解析</span>
-        <span><i class="sw"></i>还没跑</span>
+        <span><i class="sw ok"></i>success</span>
+        <span><i class="sw fail"></i>fail (a result)</span>
+        <span><i class="sw void"></i>not a result, to rerun</span>
+        <span><i class="sw wait"></i>delivered, awaiting digest</span>
+        <span><i class="sw"></i>not run</span>
       </div>
     </div>
     <div class="cards" id="cards"></div>
@@ -54,43 +54,43 @@
 
   <section id="setup" aria-labelledby="h-setup">
     <div class="section-head">
-      <h2 id="h-setup">运行环境</h2>
-      <p>每个上传者最近一次上传的 MANIFEST.md：机器的 GPU 和驱动、CPU 与内存、软件版本，以及运行器的设置和并发。</p>
+      <h2 id="h-setup">Run setup</h2>
+      <p>The MANIFEST.md of each helper's latest delivery: GPUs and driver, CPU and memory, software versions, and the runner's settings and concurrency.</p>
     </div>
     <div class="hosts" id="hosts"></div>
   </section>
 
   <section id="machines" aria-labelledby="h-machines">
     <div class="section-head">
-      <h2 id="h-machines">机器类型</h2>
-      <p>按任务的物体分两类分配资源。“实测峰值”取自每局评分器记录的内存和显存峰值（verifier/reward.json）。</p>
+      <h2 id="h-machines">Machine types</h2>
+      <p>Resources are allocated by the kind of object a task handles. Measured peaks are the memory and GPU memory peaks the grader records for each trial (verifier/reward.json).</p>
     </div>
     <div class="two" id="machine-specs"></div>
   </section>
 
   <section id="uploads" aria-labelledby="h-uploads">
     <div class="section-head">
-      <h2 id="h-uploads">上传记录</h2>
-      <p>数据集里的每个上传包（<code>&lt;上传者&gt;/&lt;batch&gt;/&lt;bundle&gt;/</code>），含尚未合并的 pull request。点一行看 MANIFEST 和 batch 日志里的报错行。</p>
+      <h2 id="h-uploads">Deliveries</h2>
+      <p>Every bundle in the dataset (<code>&lt;helper&gt;/&lt;batch&gt;/&lt;bundle&gt;/</code>), open pull requests included. Open a row for its MANIFEST.md and the error lines of its batch log.</p>
     </div>
     <div id="bundles"></div>
   </section>
 
   <section id="errors" aria-labelledby="h-errors">
     <div class="section-head">
-      <h2 id="h-errors">错误与重跑</h2>
-      <p>不算结果的局（基础设施故障，要用同一个种子重跑）、没有判定的局、Harbor 报异常的局，以及跑过不止一次的局。点一行看异常和日志。</p>
+      <h2 id="h-errors">Errors and reruns</h2>
+      <p>Trials that are not a result (an infrastructure failure: rerun with the same seed), trials without a verdict, trials with a Harbor exception, and trials run more than once. Open a row for the exception and the logs.</p>
     </div>
     <div class="chips" id="error-kinds"></div>
     <div class="filters">
-      <label for="err-target">组合 <select id="err-target"></select></label>
-      <label for="err-kind">类型 <select id="err-kind">
-        <option value="todo">需要处理（不算结果、没有判定、Harbor 异常）</option>
-        <option value="void">不算结果</option>
-        <option value="no_verdict">没有判定</option>
-        <option value="exception">有 Harbor 异常</option>
-        <option value="rerun">重跑过</option>
-        <option value="all">全部</option>
+      <label for="err-target">Pair <select id="err-target"></select></label>
+      <label for="err-kind">Kind <select id="err-kind">
+        <option value="todo">Needs action (not a result, no verdict, Harbor exception)</option>
+        <option value="void">Not a result</option>
+        <option value="no_verdict">No verdict</option>
+        <option value="exception">Harbor exception</option>
+        <option value="rerun">Rerun</option>
+        <option value="all">All</option>
       </select></label>
     </div>
     <div id="error-table"></div>
@@ -98,34 +98,34 @@
 
   <section id="matrix" aria-labelledby="h-matrix">
     <div class="section-head">
-      <h2 id="h-matrix">任务矩阵</h2>
-      <p>每格 6 个小方块：上排 privileged 第 1–3 局，下排 standard 第 1–3 局。悬停看局的详情，点击打开。</p>
+      <h2 id="h-matrix">Task matrix</h2>
+      <p>Six squares per cell: top row privileged trials 1–3, bottom row standard trials 1–3. Hover for the trial, click to open it.</p>
     </div>
     <div class="filters">
-      <label for="mx-material">物体 <select id="mx-material">
-        <option value="all">全部</option><option value="rigid">刚体</option><option value="deformable">可形变</option>
+      <label for="mx-material">Objects <select id="mx-material">
+        <option value="all">All</option><option value="rigid">Rigid</option><option value="deformable">Deformable</option>
       </select></label>
-      <label for="mx-diff">难度 <select id="mx-diff"><option value="all">全部</option></select></label>
-      <label for="mx-search">搜索 <input type="search" id="mx-search" placeholder="底档名"></label>
-      <label><input type="checkbox" id="mx-incomplete"> 只看没跑完的</label>
+      <label for="mx-diff">Difficulty <select id="mx-diff"><option value="all">All</option></select></label>
+      <label for="mx-search">Search <input type="search" id="mx-search" placeholder="base name"></label>
+      <label><input type="checkbox" id="mx-incomplete"> Unfinished only</label>
     </div>
     <div class="table-wrap"><div class="matrix" id="matrix-grid"></div></div>
   </section>
 
   <section id="frames" aria-labelledby="h-frames">
     <div class="section-head">
-      <h2 id="h-frames">首帧</h2>
-      <p>每个底档 3 个外观种子的出生画面（cam_high）。privileged 和 standard 是同一个场景，所以 3 张覆盖 6 个变体；IKEA 的 12 个底档只允许种子 0。</p>
+      <h2 id="h-frames">First frames</h2>
+      <p>The birth frame (cam_high) of each base at its 3 appearance seeds. Privileged and standard share one scene, so 3 frames cover the 6 variants; the 12 IKEA bases allow seed 0 only.</p>
     </div>
     <div class="filters">
-      <label for="fr-family">族 <select id="fr-family"><option value="all">全部</option></select></label>
+      <label for="fr-family">Family <select id="fr-family"><option value="all">All</option></select></label>
     </div>
     <div class="frames" id="frame-list"></div>
   </section>
 </main>
 
 <footer class="wrap">
-  <p>数据：Hugging Face 数据集 <a id="ds-link" href="https://huggingface.co/datasets/RoboARC/RoboARC-outputs" target="_blank" rel="noopener">RoboARC/RoboARC-outputs</a>（公开）。上传格式见 RoboARC 的 <code>scripts/send_results.sh</code>。</p>
+  <p>Data: the Hugging Face dataset <a id="ds-link" href="https://huggingface.co/datasets/RoboARC/RoboARC-outputs" target="_blank" rel="noopener">RoboARC/RoboARC-outputs</a> (public). The delivery format is RoboARC's <code>scripts/send_results.sh</code>.</p>
   <p id="foot-release"></p>
 </footer>
 

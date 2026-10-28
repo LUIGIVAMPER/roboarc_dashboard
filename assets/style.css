@@ -15,8 +15,8 @@
   --void: #cf9424;            /* not a result: voided, must be rerun */
   --wait: #7c8c9e;            /* uploaded, awaiting the log digest */
   --empty: #e4e7eb;           /* not run yet */
-  --font-display: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-body: "Noto Sans SC", "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --step--2: 0.75rem;
   --step--1: 0.8125rem;
@@ -124,7 +124,7 @@ section, .masthead, .card, .spec, .host, .frames, .frame-fam, .frame-task, .draw
 .bar { height: 10px; border-radius: 5px; background: var(--empty); display: flex; overflow: hidden; }
 .seg { height: 100%; }
 .seg.void { background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--surface) 35%, transparent) 3px 6px); }
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; font-size: var(--step--1); }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; font-size: var(--step--1); align-items: end; }
 .stat { display: grid; gap: 0; }
 .stat .k { color: var(--muted); font-size: var(--step--2); }
 .stat .v { font-variant-numeric: tabular-nums; font-weight: 500; }
