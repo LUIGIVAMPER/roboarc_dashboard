@@ -1,9 +1,9 @@
 {
- "note": "The harness + model pairs the run must cover. A delivered run belongs to a pair when its harness (the runner line's agent, or the run id's first word) matches `harness` and its model matches `model` (case-insensitive regular expressions). Runs that match no pair are listed as other runs.",
+ "note": "The harness + model pairs the run must cover. A delivered run belongs to a pair when its harness (the runner line's agent, or the run id's first word) matches `harness` and its model matches `model` (case-insensitive regular expressions). Runs that match no pair are listed as other runs. `short` is the model's name in the daily progress text (default: `model`).",
  "targets": [
   {"id": "codex-gpt6-astra", "harness": "Codex", "model": "GPT-6 Astra",
    "match": {"harness": "codex", "model": "gpt[-_.]?6[-_.]?astra"}},
-  {"id": "claude-code-opus-5-5", "harness": "Claude Code", "model": "Claude Opus 5.5",
+  {"id": "claude-code-opus-5-5", "harness": "Claude Code", "model": "Claude Opus 5.5", "short": "Opus 5.5",
    "match": {"harness": "claude[-_]?code", "model": "opus[-_.]?5[-_.]?5"}},
   {"id": "antigravity-gemini-4-argon", "harness": "Antigravity", "model": "Gemini 4 Argon",
    "match": {"harness": "antigravity", "model": "gemini[-_.]?4[-_.]?argon"}},

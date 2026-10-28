@@ -132,6 +132,16 @@ section, .masthead, .card, .spec, .host, .frames, .frame-fam, .frame-task, .draw
 .modes .bar { height: 6px; }
 .card-foot { font-size: var(--step--2); color: var(--faint); display: flex; flex-wrap: wrap; gap: 4px 12px; }
 
+/* daily progress text */
+.share-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 8px; }
+.share { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; align-items: start; }
+.share-block { padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.share-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 500; font-size: var(--step--1); }
+pre.share-text {
+  margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--surface-2); color: var(--ink);
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all;
+}
+
 /* machine panels */
 .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .spec { padding: 16px 18px; display: grid; gap: 10px; min-width: 0; }

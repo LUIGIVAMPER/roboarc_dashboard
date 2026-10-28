@@ -10,7 +10,7 @@ const MODE_LABEL = { privileged: "privileged", standard: "standard" };
 const STATUS_LABEL = { ok: "success", fail: "fail", void: "not a result", wait: "awaiting digest", empty: "not run" };
 
 const S = {
-  tasks: null, targets: [], digest: { bundles: [], trials: [] }, frames: {},
+  tasks: null, targets: [], digest: { bundles: [], trials: [] }, frames: {}, helpers: {}, shareBlocks: [],
   dataset: DEFAULT_DATASET,
   live: { bundles: [], trials: [], listed: null, error: null, at: null, info: null },
   details: {},          // bundle key -> detail file (lazy)
@@ -295,6 +295,48 @@ function renderCards() {
       <td class="mono">${p.ok + p.fail} / ${p.total}</td><td class="mono">${p.ok} / ${p.fail}</td><td class="mono">${p.void}</td><td>${when(p.last)}</td></tr>`).join("")}</tbody></table></div>` : "";
 }
 
+// The daily progress text: "<name>" then one "<harness> + <model>: <trials with a result>/<total>" line per pair.
+function renderShare() {
+  const { eff, bmap, pairs, trials, K } = S.model;
+  const total = S.tasks.tasks.length * MODES.length * K;
+  const bases = new Set(S.tasks.tasks.map((t) => t.base));
+  const label = (t) => `${t.harness} + ${t.short || t.model}`;
+  const delivered = {};   // helper -> pairs it delivered trials for
+  for (const t of trials) {
+    const h = bmap[t.bundle]?.helper;
+    if (h && !t.pair.startsWith("other:")) (delivered[h] ||= new Set()).add(t.pair);
+  }
+  const counted = {};     // helper -> pair -> slots whose counted result it delivered
+  for (const [key, e] of Object.entries(eff)) {
+    const [pair, base] = key.split("|");
+    const h = bmap[e.final.bundle]?.helper;
+    if (!h || pair.startsWith("other:") || !bases.has(base) || (e.final.status !== "ok" && e.final.status !== "fail")) continue;
+    (counted[h] ||= {})[pair] = (counted[h][pair] || 0) + 1;
+  }
+  const blocks = Object.keys(delivered).sort().map((h) => {
+    const name = S.helpers[h] || h;
+    return { title: name, text: [name, ...S.targets.filter((t) => delivered[h].has(t.id)).map((t) => `${label(t)}: ${counted[h]?.[t.id] || 0}/${total}`)].join("\n") };
+  });
+  blocks.push({ title: "All helpers", text: ["All helpers", ...S.targets.map((t) => `${label(t)}: ${pairs[t.id].ok + pairs[t.id].fail}/${total}`)].join("\n") });
+  S.shareBlocks = blocks;
+  $("#share").innerHTML = blocks.map((b, i) => `<div class="panel share-block"><div class="share-head"><span>${esc(b.title)}</span>
+    <button class="btn" type="button" data-copy="${i}">Copy</button></div><pre class="share-text" id="share-${i}">${esc(b.text)}</pre></div>`).join("");
+}
+
+async function copyShare(btn) {
+  const i = +btn.dataset.copy;
+  try {
+    await navigator.clipboard.writeText(S.shareBlocks[i].text);
+    btn.textContent = "Copied";
+  } catch {
+    const range = document.createRange();   // the clipboard was refused: select the text for Ctrl+C
+    range.selectNodeContents($(`#share-${i}`));
+    getSelection().removeAllRanges(); getSelection().addRange(range);
+    btn.textContent = "Selected: press Ctrl+C";
+  }
+  setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+}
+
 function latestByHelper() {
   const out = {};
   for (const b of S.model.bundles) {
@@ -546,6 +588,7 @@ function render() {
   buildModel();
   if (!OFFLINE) renderStatus(); else { $("#digest-status").innerHTML = S.digest.generated_at ? `logs digested ${when(S.digest.generated_at)}` : ""; $("#release").textContent = `RoboARC ${S.tasks.release} · ${S.tasks.tasks.length} bases`; }
   renderCards();
+  renderShare();
   renderHosts();
   renderMachines();
   renderBundles();
@@ -734,6 +777,8 @@ function wire() {
   $("#mx-search").addEventListener("input", renderMatrix);
   $("#fr-family").addEventListener("change", renderFrames);
   document.addEventListener("click", (e) => {
+    const cp = e.target.closest("[data-copy]");
+    if (cp) return copyShare(cp);
     const tr = e.target.closest("[data-trial]");
     if (tr) return openTrial(tr.dataset.trial);
     const br = e.target.closest("[data-bundle]");
@@ -752,11 +797,12 @@ async function reloadDigest() {
 }
 
 async function start() {
-  const [tasks, targets, frames] = await Promise.all([
+  const [tasks, targets, frames, helpers] = await Promise.all([
     getJSON(`data/tasks.json?v=${minuteStamp()}`), getJSON(`data/targets.json?v=${minuteStamp()}`),
     getJSON(`data/frames.json?v=${minuteStamp()}`, { optional: true }).catch(() => null),
+    getJSON(`data/helpers.json?v=${minuteStamp()}`, { optional: true }).catch(() => null),
   ]);
-  S.tasks = tasks; S.targets = targets.targets; S.frames = frames?.frames || {};
+  S.tasks = tasks; S.targets = targets.targets; S.frames = frames?.frames || {}; S.helpers = helpers?.names || {};
   await reloadDigest();
   if (S.digest.dataset && !S.digest.dataset.startsWith("/")) S.dataset = S.digest.dataset;
   $("#ds-link").href = `${HF}/datasets/${S.dataset}`;

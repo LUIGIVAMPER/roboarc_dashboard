@@ -1,0 +1,6 @@
+{
+ "note": "Display names for the daily progress text: names[<helper>] = the name to print, where <helper> is the name a delivery was sent under (scripts/send_results.sh <batch> <helper>, the first folder of a bundle). A helper without an entry prints as its folder name.",
+ "names": {
+  "jianwen": "Jianwen Lyu"
+ }
+}
