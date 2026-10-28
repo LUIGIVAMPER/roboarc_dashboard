@@ -1,11 +1,12 @@
 // The timeline of one trial (timeline.html?rev=&path=&job=&trial=): the agent's model turns from Harbor's ATIF trajectory
 // (agent/trajectory.json) merged by time with the robot's record, both read from the trial's job archive on Hugging Face
 // in the browser. The archive is sorted by name, so agent/ comes first and artifacts/data/episode.jsonl soon after; the
-// download stops there.
+// download stops there. A delivery of loose files (the runner's folders, no send_results.sh) has no job archive: the
+// trial's files are read one by one, and its video streams from the dataset.
 
 import {
   HF, DEFAULT_DATASET, STATUS_LABEL, $, esc, fmtInt, fmtDur, abs, getJSON, getText, hfResolveIn, hfBlobIn, statusOf,
-  timelineHref, parseManifest, trialsFromIndex, minuteStamp, encRev, encPath,
+  timelineHref, parseManifest, trialsFromIndex, minuteStamp, encRev, encPath, listFiles, readLoose,
 } from "./common.js";
 
 // ---------- reading a job archive in the browser (gzip stream + tar), stopping early ----------
@@ -213,6 +214,7 @@ const T = {
   dataset: P.get("ds") || DEFAULT_DATASET, rev: P.get("rev"), path: P.get("path"), job: P.get("job"), trial: P.get("trial"),
   turns: [], robot: [], events: [], t0: null, traj: null, rows: [], hidden: new Set(), query: "",
   video: null, motions: [], motionsOf: null, nowRow: null,
+  loose: false, files: null,   // a delivery of loose files: the trial directory's files, {path in it: size}
 };
 const ROBOT_SRC = { service: "robot service", tooling: "sim tooling, self-reported" };
 
@@ -225,6 +227,7 @@ const clock = (t) => new Date(t * 1000).toLocaleTimeString("en-GB", { hour12: fa
 const kb = (s) => (s.length < 1024 ? `${s.length} B` : `${(s.length / 1024).toFixed(1)} kB`);
 const pre = (text) => `<pre class="log">${esc(text)}</pre>`;
 const status = (html) => { $("#tl-status").innerHTML = html; };
+const trialDir = () => `${T.path}/jobs/${T.job}/${T.trial}`;   // a loose delivery's trial folder
 
 // ---------- the result panel ----------
 
@@ -243,12 +246,20 @@ async function loadTrialRecord() {
   } else {
     // not digested yet: the delivery's own MANIFEST.md and index.json
     const res = (p) => hfResolveIn(T.dataset, T.rev, `${T.path}/${p}`);
-    const man = await getText(res("MANIFEST.md")).then(parseManifest).catch(() => ({ parsed: {}, raw: {} }));
-    const idx = await getJSON(res("index.json")).catch(() => ({}));
+    const man = await getText(res("MANIFEST.md")).then(parseManifest).catch(() => null);
+    const idx = await getJSON(res("index.json")).catch(() => null);
     const [helper, batch, bundle] = T.path.split("/");
-    const runId = idx.run_id || man.parsed.runner?.run_id || null;
-    b = { key, helper, batch, bundle, path: T.path, revision: T.rev, run_id: runId, manifest: man.parsed, manifest_fields: man.raw, pending: true };
-    t = trialsFromIndex(idx, key, T.path, runId).find((x) => x.job === T.job && x.trial_dir === T.trial) || null;
+    const loose = !man && !idx ? await readLoose(T.dataset, T.rev, T.path, key).catch(() => null) : null;
+    if (loose) {
+      b = { key, helper, batch, bundle, path: T.path, revision: T.rev, run_id: loose.runId, manifest: loose.man.parsed,
+        manifest_fields: loose.man.raw, pending: true, layout: "loose", official: loose.official };
+      t = loose.trials.find((x) => x.job === T.job && x.trial_dir === T.trial) || null;
+    } else {
+      const m = man || { parsed: {}, raw: {} };
+      const runId = idx?.run_id || m.parsed.runner?.run_id || null;
+      b = { key, helper, batch, bundle, path: T.path, revision: T.rev, run_id: runId, manifest: m.parsed, manifest_fields: m.raw, pending: true };
+      t = trialsFromIndex(idx || {}, key, T.path, runId).find((x) => x.job === T.job && x.trial_dir === T.trial) || null;
+    }
   }
   return { b, t, detail, others };
 }
@@ -277,7 +288,7 @@ function renderSummary(b, t, detail, others) {
   const tokIn = t.tokens_in ?? T.traj?.final_metrics?.total_prompt_tokens, tokOut = t.tokens_out ?? T.traj?.final_metrics?.total_completion_tokens;
   const cached = T.traj?.final_metrics?.total_cached_tokens;
   const kv = [
-    ["Result", `<span class="pill ${st}">${STATUS_LABEL[st]}</span>${t.result_source === "index" ? ` <span class="small muted">(${b.pending ? "from index.json: the delivery is not digested yet" : "from index.json only"})</span>` : ""}`],
+    ["Result", `<span class="pill ${st}">${STATUS_LABEL[st]}</span>${t.result_source === "index" ? ` <span class="small muted">(${b.pending ? (b.layout === "loose" ? "the delivery is not digested yet" : "from index.json: the delivery is not digested yet") : b.layout === "loose" ? "from verifier/reward.json" : "from index.json only"})</span>` : ""}`],
     ["Reward", esc(t.reward ?? "–")], ["Reason", esc(t.reason || "–")],
     ["Harbor exception", esc(t.exception_type || (t.exception ? "yes (awaiting digest)" : "none"))],
     ["Wall time", fmtDur(t.wall_s)],
@@ -287,9 +298,11 @@ function renderSummary(b, t, detail, others) {
     ["OOM or emergency kills", esc(t.oom_kills ?? "–")], ["Harbor exit code", esc(t.harbor_rc ?? "–")],
     ["Other attempts of this trial", others.length ? others.map((o) => `<a href="${esc(timelineHref({ dataset: T.dataset, rev: o.rev, path: o.path, job: o.job, trial: o.trial_dir }))}">${esc(o.result)} · ${esc(abs(o.finished_at || ""))}</a>`).join(", ") : "none"],
   ];
-  const archive = hfResolveIn(T.dataset, T.rev, `${T.path}/jobs/${T.job}.tar.gz`);
+  const files = T.loose
+    ? `<a class="btn" href="${esc(hfBlobIn(T.dataset, T.rev, trialDir()))}" target="_blank" rel="noopener">Open the trial's files on Hugging Face</a>`
+    : `<a class="btn" href="${esc(hfResolveIn(T.dataset, T.rev, `${T.path}/jobs/${T.job}.tar.gz`))}" target="_blank" rel="noopener">Download the job archive</a>`;
   let html = `<div class="panel tl-summary"><dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
-    <div class="chips"><a class="btn" href="${esc(archive)}" target="_blank" rel="noopener">Download the job archive</a><a class="btn" href="${esc(hfBlobIn(T.dataset, T.rev, T.path))}" target="_blank" rel="noopener">Open the delivery on Hugging Face</a></div></div>`;
+    <div class="chips">${files}<a class="btn" href="${esc(hfBlobIn(T.dataset, T.rev, T.path))}" target="_blank" rel="noopener">Open the delivery on Hugging Face</a>${b.official === false ? ` <span class="tag warn" title="the helper's REDACTION.json: &quot;official&quot;: false">unofficial delivery: not counted in the progress</span>` : ""}</div></div>`;
   if (detail) {
     const blocks = [];
     if (detail.exception_message) blocks.push(["Exception (result.json)", pre(detail.exception_message), true]);
@@ -557,9 +570,10 @@ function markHtml() {
     <div class="tl-video-marks">${marks.map((m) => `<button type="button" class="mark ${m.cls}" data-vt="${videoAt(m.sim)}" title="${esc(m.title)}"><b>▶ ${fmtVid(videoAt(m.sim))}</b> ${m.text}</button>`).join("")}</div>`;
 }
 
-async function loadVideo() {
-  const btn = $("#vid-load"), bar = $("#vid-progress");
-  btn.disabled = true;
+// The video read on in the job archive: {dir, g: {mp4 (a Blob), frames, manifest}}; dir null when it has none; null when
+// the archive could not be read.
+async function videoFromArchive() {
+  const bar = $("#vid-progress");
   bar.hidden = false;
   bar.removeAttribute("value");
   const marker = `/${T.job}/${T.trial}/`;
@@ -600,26 +614,48 @@ async function loadVideo() {
   } catch (e) {
     console.error(e);
     vnote(`<span class="dot err"></span>Could not read the video from the job archive: ${esc(e.message)}.`);
-    btn.disabled = false;
-    return;
+    return null;
   } finally {
     cancelAnimationFrame(raf);
     bar.hidden = true;
   }
-  const dir = VIDEO_DIRS.find((d) => got[d]?.mp4);
+  const dir = VIDEO_DIRS.find((d) => got[d]?.mp4) || null;
+  return { dir, g: got[dir] };
+}
+
+// A loose delivery: the video streams from the dataset (src), its frame map and recording manifest are read beside it.
+async function videoFromFiles() {
+  const dir = VIDEO_DIRS.find((d) => `${d}replay.mp4` in T.files) || null;
+  if (!dir) return { dir };
+  vnote(`<span class="dot live"></span>Reading the video's frame map…`);
+  const get = (f) => (`${dir}${f}` in T.files
+    ? fetch(hfResolveIn(T.dataset, T.rev, `${trialDir()}/${dir}${f}`)).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null) : null);
+  const [map, man] = await Promise.all([get("replay.frame_map.jsonl"), get("replay.recording_manifest.json")]);
+  let manifest = null;
+  try { manifest = man ? JSON.parse(new TextDecoder().decode(man)) : null; } catch { manifest = null; }
+  return { dir, g: { src: hfResolveIn(T.dataset, T.rev, `${trialDir()}/${dir}replay.mp4`), size: T.files[`${dir}replay.mp4`],
+    frames: map ? frameTimes(new Uint8Array(map)) : null, manifest } };
+}
+
+async function loadVideo() {
+  const btn = $("#vid-load");
+  btn.disabled = true;
+  const found = T.loose ? await videoFromFiles() : await videoFromArchive();
+  if (!found) { btn.disabled = false; return; }
+  const { dir, g } = found;
   if (!dir) {
-    vnote(`<b>This trial's job archive has no replay video</b> (<code>artifacts/data/replay.mp4</code> or <code>verifier/replay.mp4</code>). The protocol expects one for every graded trial; a privileged trial whose agent submitted no trajectory that replays has none.`);
+    vnote(`<b>This trial${T.loose ? "" : "'s job archive"} has no replay video</b> (<code>artifacts/data/replay.mp4</code> or <code>verifier/replay.mp4</code>). The protocol expects one for every graded trial; a privileged trial whose agent submitted no trajectory that replays has none.`);
     return;
   }
-  const g = got[dir], m = g.manifest || {}, r = m.result || {};
+  const m = g.manifest || {}, r = m.result || {};
   T.video = {
-    dir, url: URL.createObjectURL(g.mp4), size: g.mp4.size, frames: g.frames || null, manifest: g.manifest || null,
+    dir, url: g.src || URL.createObjectURL(g.mp4), size: g.size ?? g.mp4.size, frames: g.frames || null, manifest: g.manifest || null,
     dtSim: r.sim_steps > 0 && r.sim_time_s > 0 ? r.sim_time_s / r.sim_steps : null,
     dtPhys: r.physics_steps > 0 && r.sim_time_s > 0 ? r.sim_time_s / r.physics_steps : null,
   };
   const service = dir === VIDEO_DIRS[0] || T.robot.some((e) => e.src === "service");
   T.video.noteHtml = [
-    `<code>${esc(dir)}replay.mp4</code>, ${mb(g.mp4.size)}${m.frame_count ? `, ${fmtInt(m.frame_count)} frames at ${esc(m.fps)} fps` : ""}${r.sim_time_s ? `, ${(+r.sim_time_s).toFixed(1)} s simulated` : ""}${r.success != null ? `, replay success ${esc(r.success)}` : ""}.`,
+    `<code>${esc(dir)}replay.mp4</code>, ${mb(T.video.size)}${m.frame_count ? `, ${fmtInt(m.frame_count)} frames at ${esc(m.fps)} fps` : ""}${r.sim_time_s ? `, ${(+r.sim_time_s).toFixed(1)} s simulated` : ""}${r.success != null ? `, replay success ${esc(r.success)}` : ""}.`,
     dir === VIDEO_DIRS[0] ? "The sim service's replay of the live episode in a fresh process." : "The verifier's replay of the trajectory the agent submitted.",
     !T.video.dtSim ? "Its recording manifest is missing, so the timeline's rows have no place in it."
       : service ? "Click a robot row of the timeline to jump the video to the start of its motion."
@@ -629,7 +665,7 @@ async function loadVideo() {
   vnote(T.video.noteHtml);
   btn.hidden = true;
   const save = $("#vid-save");
-  save.href = T.video.url;
+  save.href = g.src ? `${g.src}?download=true` : T.video.url;   // a link to another site ignores download=
   save.download = `${T.trial}-replay.mp4`;
   save.hidden = false;
   $("#vid-marks").innerHTML = markHtml();
@@ -646,6 +682,12 @@ async function loadVideo() {
 
 // Before loading: what loading the video costs (the archive's size, from the Hugging Face API).
 async function videoIntro() {
+  if (T.loose) {
+    const d = VIDEO_DIRS.find((x) => `${x}replay.mp4` in (T.files || {}));
+    vnote(d ? `The replay video of this trial, rendered while it was replayed for grading, is <code>${esc(d)}replay.mp4</code> (${mb(T.files[`${d}replay.mp4`])}). This delivery has its files loose, so it plays straight from the dataset.`
+      : "This trial has no replay video in the delivery.");
+    return;
+  }
   const base = "The replay video of this trial, rendered while it was replayed for grading, is further into the job archive. A gzip archive cannot be read from the middle, so loading it downloads the archive up to the video: in standard mode nearly all of it.";
   vnote(base);
   const list = await getJSON(`${HF}/api/datasets/${T.dataset}/tree/${encRev(T.rev)}/${encPath(`${T.path}/jobs`)}`).catch(() => null);
@@ -707,7 +749,7 @@ async function loadTimeline() {
   let inside = false, gotTraj = false, gotSession = false;
   const url = hfResolveIn(T.dataset, T.rev, `${T.path}/jobs/${T.job}.tar.gz`);
   const dec = new TextDecoder();
-  const read = await untarGz(url, {
+  const opts = {
     want: (name, size) => { const r = relOf(name); return r in WANT && size <= (256 << 20); },
     stop: (name) => {
       const r = relOf(name);
@@ -733,9 +775,17 @@ async function loadTimeline() {
       }
     },
     onProgress: (n) => { if (!gotTraj) status(`<span><span class="dot"></span>Reading the job archive… ${(n / 1048576).toFixed(0)} MB unpacked</span>`); },
-  });
+  };
+  let read = 0;
+  if (T.loose) {   // no job archive: the same files, each read from the trial's folder
+    status(`<span><span class="dot"></span>Reading the trial's files…</span>`);
+    const names = Object.keys(WANT).filter((r) => r in T.files && opts.want(marker + r, T.files[r]));
+    const got = await Promise.all(names.map((r) => fetch(hfResolveIn(T.dataset, T.rev, `${trialDir()}/${r}`))
+      .then((x) => (x.ok ? x.arrayBuffer() : null))));
+    for (const [i, r] of names.entries()) if (got[i]) { read += got[i].byteLength; await opts.onFile(marker + r, new Uint8Array(got[i])); }
+  } else read = await untarGz(url, opts);
   if (!gotTraj && !T.robot.length) merge();
-  status(`<span><span class="dot live"></span>${gotTraj ? `${T.turns.filter((e) => e.type === "turn").length} model turns` : "no agent/trajectory.json"}, ${T.robot.length} robot events; read the first ${(read / 1048576).toFixed(0)} MB of the job archive (unpacked)</span>`);
+  status(`<span><span class="dot live"></span>${gotTraj ? `${T.turns.filter((e) => e.type === "turn").length} model turns` : "no agent/trajectory.json"}, ${T.robot.length} robot events; ${T.loose ? `read ${(read / 1048576).toFixed(1)} MB of the trial's files` : `read the first ${(read / 1048576).toFixed(0)} MB of the job archive (unpacked)`}</span>`);
   if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "start" });
 }
 
@@ -747,8 +797,10 @@ async function start() {
     return;
   }
   wire();
-  videoIntro();
   const rec = await loadTrialRecord().catch((e) => { status(`<span><span class="dot err"></span>Could not read the delivery: ${esc(e.message)}</span>`); return null; });
+  T.loose = rec?.b?.layout === "loose";
+  if (T.loose) T.files = await listFiles(T.dataset, T.rev, trialDir()).catch(() => ({}));
+  videoIntro();
   if (rec) { renderHeader(rec.b, rec.t); renderSummary(rec.b, rec.t, rec.detail, rec.others); }
   else renderHeader(null, null);
   try {

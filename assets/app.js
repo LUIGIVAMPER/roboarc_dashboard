@@ -3,7 +3,7 @@
 
 import {
   HF, DEFAULT_DATASET, STATUS_LABEL, $, esc, pct, median, fmtDur, fmtDays, fmtDate, minuteStamp, abs, when,
-  getJSON, getText, encRev, encPath, hfResolveIn, hfBlobIn, statusOf, timelineHref, parseManifest, trialsFromIndex,
+  getJSON, getText, encRev, encPath, hfResolveIn, hfBlobIn, statusOf, timelineHref, parseManifest, trialsFromIndex, readLoose,
 } from "./common.js";
 
 const LIVE_EVERY_MS = 5 * 60 * 1000;
@@ -75,13 +75,18 @@ async function refreshLive() {
       try { man = parseManifest(await getText(hfResolve(b.rev, `${b.path}/MANIFEST.md`))); } catch (e) { err.push(`MANIFEST.md: ${e.message}`); }
       try { idx = await getJSON(hfResolve(b.rev, `${b.path}/index.json`)); } catch (e) { err.push(`index.json: ${e.message}`); }
       const [helper, batch, bundle] = b.path.split("/");
-      const runId = idx.run_id || man.parsed.runner?.run_id || null;
-      const ts = trialsFromIndex(idx, b.key, b.path, runId);
+      let runId = idx.run_id || man.parsed.runner?.run_id || null;
+      let ts = trialsFromIndex(idx, b.key, b.path, runId), loose = null;
+      if (err.length === 2) {   // no MANIFEST.md and no index.json: the runner's folders as loose files?
+        loose = await readLoose(S.dataset, b.rev, b.path, b.key).catch(() => null);
+        if (loose) { man = loose.man; runId = loose.runId; ts = loose.trials; err = []; }
+      }
       trials.push(...ts);
       return {
         key: b.key, helper, batch, bundle, path: b.path, revision: b.rev, source: b.label, uploaded_at: b.uploaded_at,
         url: hfBlob(b.rev, b.path), run_id: runId, manifest: man.parsed, manifest_fields: man.raw, manifest_raw: man.raw,
-        jobs: (idx.jobs || []).length, trials: ts.length, errors: err, pending: true,
+        jobs: loose ? new Set(ts.map((t) => t.job)).size : (idx.jobs || []).length, trials: ts.length, errors: err, pending: true,
+        ...(loose ? { layout: "loose", batches: loose.batches, official: loose.official, redaction: loose.redaction } : {}),
       };
     });
     S.live = { bundles, trials, listed: listed.map((b) => b.key), error: null, at: new Date().toISOString(), info };
@@ -111,17 +116,19 @@ function buildModel() {
   const digestB = S.digest.bundles.map((b) => ({ ...b, pending: false, gone: listed ? !listed.has(b.key) : false }));
   const bundles = [...S.live.bundles, ...digestB].sort((a, b) => String(b.uploaded_at || "").localeCompare(String(a.uploaded_at || "")));
   const bmap = Object.fromEntries(bundles.map((b) => [b.key, b]));
+  // a delivery its helper marked unofficial (REDACTION.json "official": false) is shown, but kept out of the progress
   const trials = [...S.digest.trials, ...S.live.trials].filter((t) => !bmap[t.bundle]?.gone).map((t) => {
     const b = bmap[t.bundle];
-    return { ...t, pair: pairOf(b, t), status: statusOf(t), when: t.finished_at || b?.uploaded_at || "" };
+    return { ...t, pair: pairOf(b, t), status: statusOf(t), when: t.finished_at || b?.uploaded_at || "", unofficial: b?.official === false };
   });
+  const counted = trials.filter((t) => !t.unofficial);
   const baseSet = new Set(S.tasks.tasks.map((x) => x.base));
   const K = S.tasks.trials_per_task_mode;
 
   // slot -> attempts (time order); a trial without a trial number takes the first free number of its task and mode
   const slots = {};
   const byTM = {};
-  for (const t of trials.sort((a, b) => String(a.when).localeCompare(String(b.when)))) {
+  for (const t of counted.sort((a, b) => String(a.when).localeCompare(String(b.when)))) {
     if (!t.base || !MODES.includes(t.mode)) continue;
     const tm = `${t.pair}|${t.base}|${t.mode}`;
     (byTM[tm] ||= []).push(t);
@@ -143,7 +150,7 @@ function buildModel() {
 
   // run time: each trial's wall time (Harbor's started_at -> finished_at), and the time left at the current pace
   const famOf = Object.fromEntries(S.tasks.tasks.map((t) => [t.base, t.family]));
-  const timed = trials.filter((t) => typeof t.wall_s === "number" && t.started_at && t.finished_at);
+  const timed = counted.filter((t) => typeof t.wall_s === "number" && t.started_at && t.finished_at);
   const durs = { pb: {}, b: {}, f: {}, p: {}, all: [] };   // wall times of trials with a result, by pair+base, base, family, pair
   for (const t of timed) {
     if (t.status !== "ok" && t.status !== "fail") continue;
@@ -182,7 +189,7 @@ function buildModel() {
   } : null);
 
   const pairs = {};
-  const pairIds = [...S.targets.map((t) => t.id), ...new Set(trials.map((t) => t.pair).filter((p) => p.startsWith("other:")))];
+  const pairIds = [...S.targets.map((t) => t.id), ...new Set(counted.map((t) => t.pair).filter((p) => p.startsWith("other:")))];
   for (const id of pairIds) {
     const p = { id, total: 0, ok: 0, fail: 0, void: 0, wait: 0, empty: 0, modes: {}, unknownBases: new Set(), runIds: new Set(), helpers: new Set(), last: null };
     for (const m of MODES) p.modes[m] = { total: 0, ok: 0, fail: 0, void: 0, wait: 0, empty: 0 };
@@ -191,7 +198,7 @@ function buildModel() {
       const st = e ? e.final.status : "empty";
       p[st]++; p.total++; p.modes[m][st]++; p.modes[m].total++;
     }
-    for (const t of trials.filter((x) => x.pair === id)) {
+    for (const t of counted.filter((x) => x.pair === id)) {
       if (t.base && !baseSet.has(t.base)) p.unknownBases.add(t.base);
       if (t.run_id) p.runIds.add(t.run_id);
       const b = bmap[t.bundle];
@@ -277,10 +284,25 @@ function renderCards() {
   }).join("");
 
   const others = Object.values(pairs).filter((p) => p.id.startsWith("other:"));
-  $("#other-runs").innerHTML = others.length ? `<div class="table-wrap"><table>
+  const unofficial = S.model.bundles.filter((b) => b.official === false && !b.gone);
+  $("#other-runs").innerHTML = (others.length ? `<div class="table-wrap"><table>
     <thead><tr><th>Runs outside the six pairs (run id)</th><th>Helper</th><th>With a result</th><th>Success / fail</th><th>Not a result</th><th>Last delivery</th></tr></thead>
     <tbody>${others.map((p) => `<tr><td><code>${esc(p.id.slice(6))}</code></td><td>${esc([...p.helpers].join(", "))}</td>
-      <td class="mono">${p.ok + p.fail} / ${p.total}</td><td class="mono">${p.ok} / ${p.fail}</td><td class="mono">${p.void}</td><td>${when(p.last)}</td></tr>`).join("")}</tbody></table></div>` : "";
+      <td class="mono">${p.ok + p.fail} / ${p.total}</td><td class="mono">${p.ok} / ${p.fail}</td><td class="mono">${p.void}</td><td>${when(p.last)}</td></tr>`).join("")}</tbody></table></div>` : "")
+    + (unofficial.length ? `<div class="table-wrap"><table>
+    <thead><tr><th>Unofficial deliveries, not counted above</th><th>Helper</th><th>Pair</th><th>Trials</th><th>Success / fail / not a result / awaiting</th><th>Delivered</th><th>Why unofficial (the helper's REDACTION.json)</th></tr></thead>
+    <tbody>${unofficial.map((b) => {
+      const c = statusCounts(b.key);
+      return `<tr class="clickable" data-bundle="${esc(b.key)}" tabindex="0"><td class="mono">${esc(b.batch)}<br><span class="faint">${esc(b.bundle)}</span></td><td>${esc(b.helper)}</td>
+        <td>${esc(pairLabel(pairOf(b, null)))}</td><td class="mono">${b.trials}</td><td class="mono">${c.ok} / ${c.fail} / ${c.void} / ${c.wait}</td><td class="nowrap">${when(b.uploaded_at)}</td>
+        <td class="small">${esc(b.redaction?.notice || "marked \"official\": false")}</td></tr>`;
+    }).join("")}</tbody></table></div>` : "");
+}
+
+function statusCounts(key) {
+  const c = { ok: 0, fail: 0, void: 0, wait: 0 };
+  S.model.trials.filter((t) => t.bundle === key).forEach((t) => c[t.status]++);
+  return c;
 }
 
 // The daily progress text: "<name>" then one "<harness> + <model>: <trials with a result>/<total>" line per pair.
@@ -292,7 +314,7 @@ function renderShare() {
   const delivered = {};   // helper -> pairs it delivered trials for
   for (const t of trials) {
     const h = bmap[t.bundle]?.helper;
-    if (h && !t.pair.startsWith("other:")) (delivered[h] ||= new Set()).add(t.pair);
+    if (h && !t.unofficial && !t.pair.startsWith("other:")) (delivered[h] ||= new Set()).add(t.pair);
   }
   const counted = {};     // helper -> pair -> slots whose counted result it delivered
   for (const [key, e] of Object.entries(eff)) {
@@ -357,7 +379,7 @@ function renderHosts() {
     const r = m.runner || {};
     const log = b.log || {};
     return `<article class="panel host">
-      <div class="host-head"><h3>${esc(b.helper)} <span class="muted small">${esc(pairLabel(pairOf(b, null)))}</span></h3><span class="small muted">latest delivery ${when(b.uploaded_at)}: <code>${esc(b.batch)}/${esc(b.bundle)}</code>${b.pending ? " (awaiting digest)" : ""}</span></div>
+      <div class="host-head"><h3>${esc(b.helper)} <span class="muted small">${esc(pairLabel(pairOf(b, null)))}</span></h3><span class="small muted">latest delivery ${when(b.uploaded_at)}: <code>${esc(b.batch)}/${esc(b.bundle)}</code>${b.pending ? " (awaiting digest)" : ""}${deliveryTags(b)}</span></div>
       <div class="two">
         <dl class="kv">
           <dt>Harness</dt><dd>${esc(r.agent || "–")}</dd>
@@ -372,12 +394,13 @@ function renderHosts() {
         <dl class="kv">
           <dt>Parallelism</dt><dd>${log.lanes ? `${log.lanes} runner(s), concurrency ${log.concurrency_max ?? "–"} per Harbor job` : (b.pending ? "awaiting digest" : "–")}</dd>
           <dt>Trials per task</dt><dd>${m.K ? `K = ${m.K}` : "–"}</dd>
-          <dt>This batch</dt><dd>${m.trials ? `${esc(m.trials.planned_jobs)} jobs planned, ${esc(m.trials.trial_dirs)} trial dirs, ${esc(m.trials.with_verdict)} with a verdict` : "–"}</dd>
-          <dt>Code</dt><dd class="mono">${esc(raw.repo || "–")}</dd>
+          <dt>${b.batches?.length > 1 ? `These ${b.batches.length} batches` : "This batch"}</dt><dd>${m.trials ? `${esc(m.trials.planned_jobs)} jobs planned, ${esc(m.trials.trial_dirs)} trial dirs, ${esc(m.trials.with_verdict)} with a verdict` : "–"}</dd>
+          <dt>Code</dt><dd class="mono">${esc(raw.repo || (b.layout === "loose" ? "– (loose files: no MANIFEST.md)" : "–"))}</dd>
           <dt>Images</dt><dd class="mono small">${esc(raw.images || "–").replace(/\n/g, "<br>")}</dd>
         </dl>
       </div>
       ${raw.notes && raw.notes !== "none" ? `<div class="small"><b>Helper's notes: </b>${esc(raw.notes)}</div>` : ""}
+      ${b.redaction?.notice ? `<div class="small"><b>Helper's REDACTION.json: </b>${esc(b.redaction.notice)}</div>` : ""}
     </article>`;
   }).join("");
 }
@@ -484,6 +507,12 @@ function renderHardware() {
   }).join("");
 }
 
+// A delivery of the runner's folders as loose files (no send_results.sh, so no MANIFEST.md), and one marked unofficial.
+function deliveryTags(b) {
+  return (b.layout === "loose" ? ` <span class="tag" title="the runner's jobs/ and results/ folders as loose files, without send_results.sh: no MANIFEST.md, so the code commit, the images and the machine are unknown">loose files</span>` : "")
+    + (b.official === false ? ` <span class="tag warn" title="${esc(b.redaction?.notice || "REDACTION.json: \"official\": false")}">unofficial: not counted</span>` : "");
+}
+
 function pairLabel(id) {
   const t = S.targets.find((x) => x.id === id);
   return t ? `${t.harness} + ${t.model}` : id.startsWith("other:") ? id.slice(6) : id;
@@ -495,19 +524,14 @@ function renderBundles() {
     $("#bundles").innerHTML = `<div class="panel empty-state"><b>No deliveries in the dataset yet.</b><span>The dataset <a href="${HF}/datasets/${esc(S.dataset)}" target="_blank" rel="noopener">${esc(S.dataset)}</a> ${S.live.info ? `holds ${S.live.info.siblings?.length ?? 0} file(s), last updated ${when(S.live.info.lastModified)}` : "could not be read yet"}. A delivery (a direct commit or a pull request) shows up here at the next refresh.</span></div>`;
     return;
   }
-  const counts = (key) => {
-    const ts = S.model.trials.filter((t) => t.bundle === key);
-    const c = { ok: 0, fail: 0, void: 0, wait: 0 };
-    ts.forEach((t) => c[t.status]++);
-    return c;
-  };
   $("#bundles").innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Delivered</th><th>Helper</th><th>batch / bundle</th><th>Source</th><th>Pair</th><th>Trials</th><th>Success / fail / void / awaiting</th><th>State</th></tr></thead>
     <tbody>${bs.map((b) => {
-      const c = counts(b.key);
+      const c = statusCounts(b.key);
       const pair = pairOf(b, null);
-      const state = b.gone ? `<span class="pill fail">removed from the dataset</span>` : b.pending ? `<span class="pill wait">awaiting digest</span>`
-        : b.errors?.length ? `<span class="pill void" title="${esc(b.errors.join("\n"))}">digest problems</span>` : `<span class="pill ok">digested</span>`;
+      const state = (b.gone ? `<span class="pill fail">removed from the dataset</span>` : b.pending ? `<span class="pill wait">awaiting digest</span>`
+        : b.errors?.length ? `<span class="pill void" title="${esc(b.errors.join("\n"))}">digest problems</span>` : `<span class="pill ok">digested</span>`)
+        + deliveryTags(b);
       return `<tr class="clickable" data-bundle="${esc(b.key)}" tabindex="0">
         <td class="nowrap">${when(b.uploaded_at)}</td><td>${esc(b.helper)}</td>
         <td class="mono">${esc(b.batch)}<br><span class="faint">${esc(b.bundle)}</span></td>
@@ -559,7 +583,7 @@ function renderErrors() {
     <thead><tr><th>Time</th><th>Pair</th><th>Base</th><th>Mode</th><th>Trial / seed</th><th>Result</th><th>Reason / exception</th><th>Peak memory</th><th>Batch</th></tr></thead>
     <tbody>${shown.slice(0, 400).map(({ t, kinds }) => `<tr class="clickable" data-trial="${esc(t.bundle)}|${esc(t.job)}|${esc(t.trial_dir)}" tabindex="0">
       <td class="nowrap">${when(t.when)}</td><td>${esc(pairLabel(t.pair))}</td><td class="mono">${esc(t.base || "?")}</td><td>${esc(t.mode || "?")}</td>
-      <td class="mono">${t.k ?? "?"} / ${t.seed ?? "?"}</td><td><span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span>${kinds.includes("rerun") ? ` <span class="tag">rerun</span>` : ""}</td>
+      <td class="mono">${t.k ?? "?"} / ${t.seed ?? "?"}</td><td><span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span>${kinds.includes("rerun") ? ` <span class="tag">rerun</span>` : ""}${t.unofficial ? ` <span class="tag warn">unofficial</span>` : ""}</td>
       <td>${esc(why(t))}</td><td class="mono">${typeof t.peak_memory_gb === "number" ? t.peak_memory_gb.toFixed(1) + " GB" : "–"}</td>
       <td class="mono small nowrap">${esc(S.model.bmap[t.bundle]?.batch || "")}</td></tr>`).join("")}</tbody></table></div>
     ${shown.length > 400 ? `<p class="small muted">Showing the latest 400 of ${shown.length}.</p>` : ""}`;
@@ -690,14 +714,18 @@ async function openBundle(key) {
     ${b.log ? `<dt>Batch log</dt><dd>${esc(b.log.first || "")} → ${esc(b.log.last || "")}, ${b.log.lanes} runner(s), concurrency ${b.log.concurrency_max ?? "–"}</dd>` : ""}
     ${Object.entries(raw).filter(([k]) => ["notes", "mirror", "results"].includes(k)).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}
   </dl></div>`;
-  if (d?.manifest_text) html += `<div><h4>MANIFEST.md</h4>${pre(d.manifest_text)}</div>`;
+  if (b.layout === "loose") {
+    html += `<div><h4>Loose files</h4><p class="small">The runner's <code>jobs/</code> and <code>results/</code> folders as loose files, without <code>scripts/send_results.sh</code>: no MANIFEST.md, so the code commit, the images and the machine are unknown. The run settings are the batch log's runner line: <code>${esc(raw.runner || "–")}</code>. Batches: ${(b.batches || []).map((x) => `<code>${esc(x)}</code>`).join(", ") || "none found"}.</p></div>`;
+    const red = d?.redaction || b.redaction;
+    if (red) html += `<div><h4>REDACTION.json${b.official === false ? ": unofficial, not counted in the progress" : ""}</h4>${jsonPre(red)}</div>`;
+  } else if (d?.manifest_text) html += `<div><h4>MANIFEST.md</h4>${pre(d.manifest_text)}</div>`;
   else if (b.pending) html += `<div><h4>MANIFEST.md</h4>${pre(Object.entries(raw).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div>`;
   if (d?.log_notable?.length) html += `<div><h4>Error and rerun lines of the batch log</h4>${pre(d.log_notable)}</div>`;
   const ts = S.model.trials.filter((t) => t.bundle === b.key).sort((x, y) => `${x.base}|${x.mode}|${x.k}`.localeCompare(`${y.base}|${y.mode}|${y.k}`));
   if (ts.length) html += `<div><h4>Trials: open one for its timeline</h4><div class="table-wrap"><table><thead><tr><th>Base</th><th>Mode</th><th>Trial / seed</th><th>Result</th><th>Wall time</th></tr></thead><tbody>${ts.map((t) =>
     `<tr class="clickable" data-trial="${esc(t.bundle)}|${esc(t.job)}|${esc(t.trial_dir)}" tabindex="0"><td class="mono">${esc(t.base || "?")}</td><td>${esc(t.mode || "?")}</td><td class="mono">${t.k ?? "?"} / ${t.seed ?? "?"}</td>
       <td><span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span>${t.reward != null ? ` <span class="small muted">reward ${esc(t.reward)}</span>` : ""}</td><td class="mono">${fmtDur(t.wall_s)}</td></tr>`).join("")}</tbody></table></div></div>`;
-  if (d?.summary_md) html += `<details><summary class="small">Batch summary (${esc(b.batch)}.summary.md)</summary>${pre(d.summary_md)}</details>`;
+  if (d?.summary_md) html += `<details><summary class="small">Batch summary (${b.batches?.length > 1 ? `the ${b.batches.length} batches' .summary.md` : `${esc(b.batch)}.summary.md`})</summary>${pre(d.summary_md)}</details>`;
   if (b.pending) html += `<p class="small muted">This delivery is not digested yet; the next digest adds the official results, the exceptions and the resource peaks.</p>`;
   body.innerHTML = html;
 }

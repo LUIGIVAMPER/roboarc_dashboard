@@ -40,6 +40,15 @@ reruns with their logs, a per-task matrix and the first frames.
 The delivery format is RoboARC's `scripts/send_results.sh`: `<helper>/<batch>/<bundle id>/` with `MANIFEST.md`,
 `index.json`, `SHA256SUMS`, `INVENTORY.tsv`, `batch.tar.gz` and `jobs/<job>.tar.gz`.
 
+A delivery made without it, as the runner's folders in loose files, is read too: `jobs/` (the runner's `JOBS`: one or
+more batches, each with `<batch>.log`, `<batch>.summary.md`, `.plan/<batch>.json`, `.seeds/` and its job folders) and
+`results/` (the runner's `RESULTS`) under the same `<helper>/<folder>/<bundle id>/`. It has no `MANIFEST.md`, so the
+run settings are the batch log's runner line and the code commit, the images and the machine are unknown; the trials are
+the job folders' trial directories, read file by file, and on the timeline page the video plays straight from the
+dataset. A `REDACTION.json` with `"official": false` (a helper's own redacted copy) marks the delivery unofficial: it is
+listed under "Unofficial deliveries" and in the deliveries table, and kept out of the progress, the estimates, the task
+matrix and the daily progress text.
+
 ## Set up
 
 1. Create a GitHub repository and push this directory to its `main` branch.

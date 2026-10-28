@@ -1,5 +1,5 @@
 // Shared by the progress page (app.js) and the trial timeline (timeline.js): formatting, fetching, and the reading of a
-// bundle's MANIFEST.md and index.json (the same reading as tools/digest.py).
+// bundle's MANIFEST.md and index.json, or of a delivery of loose files (the same reading as tools/digest.py).
 
 export const HF = "https://huggingface.co";
 export const DEFAULT_DATASET = "RoboARC/RoboARC-outputs";
@@ -116,4 +116,66 @@ export function trialsFromIndex(idx, key, path, runId) {
     }
   }
   return rows;
+}
+
+// ---------- a delivery of loose files: the runner's jobs/ and results/ folders, no send_results.sh ----------
+
+// {path under <path>: size} of every file under <path>, following the listing's pages.
+export async function listFiles(dataset, rev, path) {
+  const out = {};
+  let url = `${HF}/api/datasets/${dataset}/tree/${encRev(rev)}/${encPath(path)}?recursive=true&limit=1000`;
+  while (url) {
+    const r = await fetch(url, { cache: "no-store" });
+    if (r.status === 404) break;
+    if (!r.ok) throw new Error(`${r.status} ${url}`);
+    for (const e of await r.json()) if (e.type === "file") out[e.path.slice(path.length + 1)] = e.size || 0;
+    url = (r.headers.get("Link") || "").match(/<([^>]+)>;\s*rel="next"/)?.[1] || null;
+  }
+  return out;
+}
+
+// The run settings (the batch logs' runner line and the plans), one trial per trial directory (awaiting digest) and
+// what REDACTION.json says, as tools/digest.py reads them; null when <path> is not such a delivery.
+export async function readLoose(dataset, rev, path, key) {
+  const files = await listFiles(dataset, rev, path);
+  const names = Object.keys(files);
+  if ("batch.tar.gz" in files || !names.some((n) => n.startsWith("jobs/"))) return null;
+  const read = (n) => (n in files ? getText(hfResolveIn(dataset, rev, `${path}/${n}`)).catch(() => null) : Promise.resolve(null));
+  const json = async (n) => { try { return JSON.parse(await read(n)); } catch { return null; } };
+  const plans = Object.fromEntries(await Promise.all(names.filter((n) => /^jobs\/\.plan\/[^/]+\.json$/.test(n))
+    .map(async (n) => [n.slice("jobs/.plan/".length, -5), (await json(n)) || {}])));
+  const logged = names.filter((n) => /^jobs\/[^/]+\.log$/.test(n) && `jobs/${n.slice(5, -4)}.summary.md` in files).map((n) => n.slice(5, -4));
+  const batches = [...new Set([...Object.keys(plans), ...logged])].sort();
+  const [red, ...logs] = await Promise.all([json("REDACTION.json"), ...batches.map((bt) => read(`jobs/${bt}.log`))]);
+  const man = parseManifest(`runner: ${logs.map((t) => (t || "").match(/^\[[^\]]+\] (runner \d+: .*)$/m)?.[1]).find(Boolean) || ""}`);
+  const ks = Object.values(plans).map((p) => p.trials).filter(Number.isInteger);
+  if (ks.length) man.parsed.K = Math.max(...ks);
+  const runId = Object.values(plans).find((p) => p.run_id)?.run_id || man.parsed.runner?.run_id || null;
+  const trials = [];
+  for (const bt of batches) {
+    const planned = {};
+    for (const p of plans[bt]?.jobs || []) (planned[p.job] ||= []).push(p);
+    const ofBatch = Object.keys(planned).length ? (j) => j in planned : (j) => j.startsWith(`${bt}-`);
+    const dirs = {};   // job -> its trial directories: jobs/<job>/<trial>/...
+    for (const n of names) {
+      const parts = n.split("/");
+      if (parts.length >= 4 && parts[0] === "jobs" && ofBatch(parts[1])) (dirs[parts[1]] ||= new Set()).add(parts[2]);
+    }
+    for (const [job, ds] of Object.entries(dirs)) for (const d of [...ds].sort()) {
+      const p = planned[job]?.length === 1 ? planned[job][0] : {};
+      trials.push({
+        bundle: key, job, trial_dir: d, base: (p.task || "").replace(/-(privileged|standard|standard-realtime)$/, "") || null,
+        mode: p.mode || null, k: p.trial ?? null, seed: p.seed ?? null, run_id: runId, reward: null,
+        exception: `jobs/${job}/${d}/exception.txt` in files, result: "pending", result_source: "index",
+        archive: `${path}/jobs/${job}/${d}/`, live: true,
+      });
+    }
+  }
+  man.parsed.trials = {
+    planned_jobs: Object.keys(plans).length ? Object.values(plans).reduce((a, p) => a + (p.jobs || []).length, 0) : "?",
+    trial_dirs: trials.length, with_verdict: trials.filter((t) => `jobs/${t.job}/${t.trial_dir}/verifier/reward.json` in files).length,
+  };
+  const redaction = red && typeof red === "object"
+    ? Object.fromEntries(["notice", "sanitized_copy", "official", "provider_alias"].filter((k) => k in red).map((k) => [k, red[k]])) : null;
+  return { man, runId, trials, batches, official: red?.official ?? null, redaction };
 }
