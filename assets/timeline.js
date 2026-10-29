@@ -1,12 +1,12 @@
 // The timeline of one trial (timeline.html?rev=&path=&job=&trial=): the agent's model turns from Harbor's ATIF trajectory
 // (agent/trajectory.json) merged by time with the robot's record, both read from the trial's job archive on Hugging Face
 // in the browser. The archive is sorted by name, so agent/ comes first and artifacts/data/episode.jsonl soon after; the
-// download stops there. A delivery of loose files (the runner's folders, no send_results.sh) has no job archive: the
-// trial's files are read one by one, and its video streams from the dataset.
+// download stops there. A delivery of loose files (the runner's folders, no send_results.sh, or Harbor's own job folders)
+// has no job archive: the trial's files are read one by one, and its video streams from the dataset.
 
 import {
   HF, DEFAULT_DATASET, STATUS_LABEL, $, esc, fmtInt, fmtDur, abs, getJSON, getText, hfResolveIn, hfBlobIn, statusOf,
-  timelineHref, parseManifest, trialsFromIndex, minuteStamp, encRev, encPath, listFiles, readLoose,
+  timelineHref, parseManifest, trialsFromIndex, minuteStamp, encRev, encPath, listFiles, readLoose, filesLoose,
 } from "./common.js";
 
 // ---------- reading a job archive in the browser (gzip stream + tar), stopping early ----------
@@ -214,7 +214,7 @@ const T = {
   dataset: P.get("ds") || DEFAULT_DATASET, rev: P.get("rev"), path: P.get("path"), job: P.get("job"), trial: P.get("trial"),
   turns: [], robot: [], events: [], t0: null, traj: null, rows: [], hidden: new Set(), query: "",
   video: null, motions: [], motionsOf: null, nowRow: null,
-  loose: false, files: null,   // a delivery of loose files: the trial directory's files, {path in it: size}
+  loose: false, files: null, dir: null,   // a delivery of loose files: the trial folder and its files, {path in it: size}
 };
 const ROBOT_SRC = { service: "robot service", tooling: "sim tooling, self-reported" };
 
@@ -227,7 +227,7 @@ const clock = (t) => new Date(t * 1000).toLocaleTimeString("en-GB", { hour12: fa
 const kb = (s) => (s.length < 1024 ? `${s.length} B` : `${(s.length / 1024).toFixed(1)} kB`);
 const pre = (text) => `<pre class="log">${esc(text)}</pre>`;
 const status = (html) => { $("#tl-status").innerHTML = html; };
-const trialDir = () => `${T.path}/jobs/${T.job}/${T.trial}`;   // a loose delivery's trial folder
+const trialDir = () => T.dir || `${T.path}/jobs/${T.job}/${T.trial}`;   // a loose delivery's trial folder
 
 // ---------- the result panel ----------
 
@@ -252,7 +252,8 @@ async function loadTrialRecord() {
     const loose = !man && !idx ? await readLoose(T.dataset, T.rev, T.path, key).catch(() => null) : null;
     if (loose) {
       b = { key, helper, batch, bundle, path: T.path, revision: T.rev, run_id: loose.runId, manifest: loose.man.parsed,
-        manifest_fields: loose.man.raw, pending: true, layout: "loose", official: loose.official };
+        manifest_fields: loose.man.raw, pending: true, layout: loose.layout, official: loose.official,
+        unofficial_reason: loose.unofficial_reason };
       t = loose.trials.find((x) => x.job === T.job && x.trial_dir === T.trial) || null;
     } else {
       const m = man || { parsed: {}, raw: {} };
@@ -288,7 +289,7 @@ function renderSummary(b, t, detail, others) {
   const tokIn = t.tokens_in ?? T.traj?.final_metrics?.total_prompt_tokens, tokOut = t.tokens_out ?? T.traj?.final_metrics?.total_completion_tokens;
   const cached = T.traj?.final_metrics?.total_cached_tokens;
   const kv = [
-    ["Result", `<span class="pill ${st}">${STATUS_LABEL[st]}</span>${t.result_source === "index" ? ` <span class="small muted">(${b.pending ? (b.layout === "loose" ? "the delivery is not digested yet" : "from index.json: the delivery is not digested yet") : b.layout === "loose" ? "from verifier/reward.json" : "from index.json only"})</span>` : ""}`],
+    ["Result", `<span class="pill ${st}">${STATUS_LABEL[st]}</span>${t.result_source === "index" ? ` <span class="small muted">(${b.pending ? (filesLoose(b) ? "the delivery is not digested yet" : "from index.json: the delivery is not digested yet") : filesLoose(b) ? "from verifier/reward.json" : "from index.json only"})</span>` : ""}`],
     ["Reward", esc(t.reward ?? "–")], ["Reason", esc(t.reason || "–")],
     ["Harbor exception", esc(t.exception_type || (t.exception ? "yes (awaiting digest)" : "none"))],
     ["Reasoning effort", t.effort_source ? `${t.effort ? esc(t.effort) : "not set: the harness's or the provider's default level, which no record names"} <span class="small muted">(from the ${esc(t.effort_source)})</span>` : "–"],
@@ -304,7 +305,7 @@ function renderSummary(b, t, detail, others) {
     ? `<a class="btn" href="${esc(hfBlobIn(T.dataset, T.rev, trialDir()))}" target="_blank" rel="noopener">Open the trial's files on Hugging Face</a>`
     : `<a class="btn" href="${esc(hfResolveIn(T.dataset, T.rev, `${T.path}/jobs/${T.job}.tar.gz`))}" target="_blank" rel="noopener">Download the job archive</a>`;
   let html = `<div class="panel tl-summary"><dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
-    <div class="chips">${files}<a class="btn" href="${esc(hfBlobIn(T.dataset, T.rev, T.path))}" target="_blank" rel="noopener">Open the delivery on Hugging Face</a>${b.official === false ? ` <span class="tag warn" title="the helper's REDACTION.json: &quot;official&quot;: false">unofficial delivery: not counted in the progress</span>` : ""}</div></div>`;
+    <div class="chips">${files}<a class="btn" href="${esc(hfBlobIn(T.dataset, T.rev, T.path))}" target="_blank" rel="noopener">Open the delivery on Hugging Face</a>${b.official === false ? ` <span class="tag warn" title="${esc(b.unofficial_reason || "the helper's REDACTION.json: \"official\": false")}">unofficial delivery: not counted in the progress</span>` : ""}</div></div>`;
   if (detail) {
     const blocks = [];
     if (detail.exception_message) blocks.push(["Exception (result.json)", pre(detail.exception_message), true]);
@@ -800,8 +801,11 @@ async function start() {
   }
   wire();
   const rec = await loadTrialRecord().catch((e) => { status(`<span><span class="dot err"></span>Could not read the delivery: ${esc(e.message)}</span>`); return null; });
-  T.loose = rec?.b?.layout === "loose";
-  if (T.loose) T.files = await listFiles(T.dataset, T.rev, trialDir()).catch(() => ({}));
+  T.loose = filesLoose(rec?.b);
+  if (T.loose) {   // the trial's folder: the record's (a Harbor job folder may be the delivery itself), else jobs/<job>/<trial>
+    if (rec.t?.archive?.endsWith("/")) T.dir = rec.t.archive.slice(0, -1);
+    T.files = await listFiles(T.dataset, T.rev, trialDir()).catch(() => ({}));
+  }
   videoIntro();
   if (rec) { renderHeader(rec.b, rec.t); renderSummary(rec.b, rec.t, rec.detail, rec.others); }
   else renderHeader(null, null);

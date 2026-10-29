@@ -14,6 +14,11 @@ directory: <batch>.log, <batch>.summary.md, .plan/, .seeds/ and the job folders,
 RESULTS directory), and maybe a REDACTION.json from the helper's own redaction ("official": false keeps its trials out of
 the progress). It has no MANIFEST.md, so its run settings come from the batch log's runner line.
 
+A delivery may also be Harbor's own output as `harbor run` wrote it, without RoboARC's runner: one job folder (config.json,
+result.json, job.log and one folder per trial) as the bundle itself, or job folders one level down. Its run settings come
+from the jobs' config.json. It has no plan, seeds or official results (the runner draws the seeds and writes them), so
+it is unofficial: kept out of the progress.
+
 Writes data/digest.json (every bundle's settings and machine, and one row per trial: task, mode, trial number, seed,
 result) and data/bundles/<helper>__<batch>__<bundle>.json (the bundle's MANIFEST.md, the batch log's notable lines and
 per trial the exception and log tails), which the page loads when a bundle or a trial is opened. Standard library only.
@@ -156,7 +161,8 @@ class Local:
             for b in sorted(os.listdir(os.path.join(self.root, h))):
                 for u in sorted(os.listdir(os.path.join(self.root, h, b))):
                     p = os.path.join(self.root, h, b, u)
-                    if os.path.isfile(os.path.join(p, "MANIFEST.md")) or os.path.isdir(os.path.join(p, "jobs")):
+                    if os.path.isfile(os.path.join(p, "MANIFEST.md")) or os.path.isdir(os.path.join(p, "jobs")) or any(
+                            os.path.isfile(os.path.join(p, x, "config.json")) for x in ("", *os.listdir(p))):
                         date = dt.datetime.fromtimestamp(os.path.getmtime(p), dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                         out.append((f"{h}__{b}__{u}", "local", "local", f"{h}/{b}/{u}", date))
         return out
@@ -299,9 +305,10 @@ def digest_job(src, rev, path, job, jobs_dir):
     return job_records(files, pre, f"{jobs_dir}/.seeds/{job}.json") + (None,)
 
 
-def digest_job_loose(src, rev, path, job, listing):
-    """The same records, read file by file from a loose delivery's jobs/<job>/ (listing: the delivery's files)."""
-    pre = f"jobs/{job}/"
+def digest_job_loose(src, rev, path, job, listing, pre=None):
+    """The same records, read file by file from a loose delivery's jobs/<job>/, or from the job folder at <pre>
+    (listing: the delivery's files)."""
+    pre = f"jobs/{job}/" if pre is None else pre
     rel = lambda n: n[len(pre):].split("/", 1)[1] if n.startswith(pre) and "/" in n[len(pre):] else None
     session = lambda n: bool(rel(n) and CODEX_SESSION.fullmatch(rel(n)))
     names = [n for n, size in listing.items() if (size <= SMALL or n.endswith("/" + SAMPLES) or session(n)) and (
@@ -495,6 +502,73 @@ def gather_loose(src, rev, path, listing):
             "loose": {"batches": batches, "official": red.get("official") if red else None, "redaction": red}}
 
 
+HARBOR_UNOFFICIAL = ("Harbor's own output (harbor run) without RoboARC's runner: no batch plan, no seeds drawn by the "
+                     "runner and no official results")
+# the agent options shown with their values; any other option is named only (it may carry a credential)
+HARBOR_KWARGS = ("version", "reasoning_effort", "web_search", "max_turns", "max_budget_usd")
+
+
+def harbor_job_dirs(listing):
+    """{job folder: its trial folders} of a delivery holding Harbor's own output (`harbor run`, no RoboARC runner): the
+    job folder is the delivery itself ("") or a folder in it ("<job>/"). A job folder has Harbor's config.json and trial
+    folders, each with its own config.json and a result.json or trial.log."""
+    out = {}
+    for pre in [""] + sorted({n.split("/", 1)[0] + "/" for n in listing if "/" in n}):
+        if pre + "config.json" not in listing:
+            continue
+        subs = {n[len(pre):].split("/", 1)[0] for n in listing if n.startswith(pre) and "/" in n[len(pre):]}
+        trials = sorted(t for t in subs if f"{pre}{t}/config.json" in listing
+                        and (f"{pre}{t}/result.json" in listing or f"{pre}{t}/trial.log" in listing))
+        if trials:
+            out[pre] = trials
+    return out
+
+
+def run_id_of(agent, model, effort):
+    """The run id RoboARC's runner gives these settings (D4, scripts/harbor/run_agent_batch.sh): <harness>-<model>-<effort>."""
+    f = lambda s: re.sub(r"^_+|_+$", "", re.sub(r"[^a-z0-9]+", "_", s.lower()))
+    m = re.sub(r"^gpt-(\d+)", r"gpt\1", re.sub(r"^claude-", "", model.rsplit("/", 1)[-1].lower()))
+    return f"{f(agent)}-{f(m)}-{f(effort or 'default')}"
+
+
+def gather_harbor(src, rev, path, listing, dirs):
+    """A delivery of Harbor job folders as `harbor run` wrote them (dirs: harbor_job_dirs). The run settings come from
+    each job's config.json (the agent, its model and options), the tasks from the trials' result.json. No batch log,
+    plan, seeds or official results: the delivery is unofficial."""
+    pre_of, jobs, settings = {}, [], []
+    for pre, trials in dirs.items():
+        c = load_json(src.read(rev, f"{path}/{pre}config.json") or b"null") or {}
+        job = c.get("job_name") or pre.rstrip("/") or path.split("/")[1]
+        pre_of[job] = pre
+        agent = (c["agents"][0] if isinstance(c.get("agents"), list) and c["agents"] else {}) or {}
+        kw = agent.get("kwargs") or {}
+        settings.append({"job": job, "folder": pre or "./", "agent": agent.get("name"), "model": agent.get("model_name"),
+                         "options": {k: kw[k] for k in HARBOR_KWARGS if k in kw},
+                         "other_options": sorted(k for k in kw if k not in HARBOR_KWARGS),
+                         "tasks": [t for d in c.get("datasets") or [] for t in d.get("task_names") or []],
+                         "trial_dirs": len(trials)})
+        jobs.append({"job": job, "tasks": [{}],
+                     "trials": [{"trial_dir": t, "exception": f"{pre}{t}/exception.txt" in listing} for t in trials]})
+    first = settings[0]
+    effort = first["options"].get("reasoning_effort")
+    run_id = run_id_of(first["agent"], first["model"], effort) if first["agent"] and first["model"] else None
+    man = parse_manifest("")
+    man["runner"] = {
+        "agent": first["agent"], "model": first["model"], "effort": effort or "default", "run_id": run_id,
+        "modes": sorted({m for s in settings for t in s["tasks"] for m in ("privileged", "standard", "standard-realtime")
+                         if t.endswith("-" + m)}),
+        "web_search": first["options"].get("web_search") or "–",
+        "usage_gateway": "on (the trials' gateway/ records)" if any(n.endswith("/gateway/totals.json") for n in listing) else "off",
+        "gpu_placement": "none (no RoboARC runner)"}
+    man["trials"] = {"planned_jobs": len(jobs), "trial_dirs": sum(len(ts) for ts in dirs.values()),
+                     "with_verdict": sum(f"{pre}{t}/verifier/reward.json" in listing for pre, ts in dirs.items() for t in ts)}
+    return {"man": man, "manifest_text": None, "batch": path.split("/")[1], "run_id": run_id, "log": None,
+            "summary": None, "plan": None, "results": {}, "jobs": jobs, "errors": [],
+            "read_job": lambda job: digest_job_loose(src, rev, path, job, listing, pre_of[job]) + (None,),
+            "archive": lambda job, trial: f"{path}/{pre_of[job]}{trial}/",
+            "harbor": {"jobs": settings}}
+
+
 def machine(man, log_hw, jobs_info, trials):
     """Fill man's host, gpus and software with the machine the batch ran on, from the best record there is, and say which:
     the batch log's host lines (the machine that ran it), the jobs' host.json (the same record), MANIFEST.md (the machine
@@ -526,8 +600,11 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
     man_b = src.read(rev, f"{path}/MANIFEST.md")
     idx = load_json(src.read(rev, f"{path}/index.json") or b"null") or {}
     listing = src.files(rev, path) if not man_b and not idx else None
+    harbor = harbor_job_dirs(listing) if listing is not None and "batch.tar.gz" not in listing else {}
     if listing is not None and "batch.tar.gz" not in listing and any(n.startswith("jobs/") for n in listing):
         g = gather_loose(src, rev, path, listing)
+    elif harbor:
+        g = gather_harbor(src, rev, path, listing, harbor)
     else:
         g = gather_bundle(src, rev, path, man_b, idx)
     man, log, plan, results, run_id, errors = g["man"], g["log"], g["plan"], g["results"], g["run_id"], g["errors"]
@@ -600,6 +677,8 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
         b.update(layout="loose", batches=g["loose"]["batches"], official=g["loose"]["official"],
                  redaction={k: red[k] for k in ("notice", "sanitized_copy", "official", "provider_alias") if k in red} or None)
         det["redaction"] = g["loose"]["redaction"]
+    if "harbor" in g:   # Harbor's own output: unofficial; its jobs' settings go on the page
+        b.update(layout="harbor", official=False, unofficial_reason=HARBOR_UNOFFICIAL, harbor_jobs=g["harbor"]["jobs"])
     return b, trials, det
 
 

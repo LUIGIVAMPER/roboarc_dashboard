@@ -1,5 +1,6 @@
 // Shared by the progress page (app.js) and the trial timeline (timeline.js): formatting, fetching, and the reading of a
-// bundle's MANIFEST.md and index.json, or of a delivery of loose files (the same reading as tools/digest.py).
+// bundle's MANIFEST.md and index.json, or of a delivery of loose files: the runner's folders, or Harbor's own job folders
+// (the same reading as tools/digest.py).
 
 export const HF = "https://huggingface.co";
 export const DEFAULT_DATASET = "RoboARC/RoboARC-outputs";
@@ -134,12 +135,20 @@ export async function listFiles(dataset, rev, path) {
   return out;
 }
 
+// A delivery whose files are loose, read file by file (no job archives): the runner's folders or Harbor's job folders.
+export const filesLoose = (b) => b?.layout === "loose" || b?.layout === "harbor";
+
 // The run settings (the batch logs' runner line and the plans), one trial per trial directory (awaiting digest) and
-// what REDACTION.json says, as tools/digest.py reads them; null when <path> is not such a delivery.
+// what REDACTION.json says, as tools/digest.py reads them; for Harbor's own job folders, readHarbor; null when <path> is
+// neither.
 export async function readLoose(dataset, rev, path, key) {
   const files = await listFiles(dataset, rev, path);
   const names = Object.keys(files);
-  if ("batch.tar.gz" in files || !names.some((n) => n.startsWith("jobs/"))) return null;
+  if ("batch.tar.gz" in files) return null;
+  if (!names.some((n) => n.startsWith("jobs/"))) {
+    const dirs = harborJobDirs(files);
+    return Object.keys(dirs).length ? readHarbor(dataset, rev, path, key, files, dirs) : null;
+  }
   const read = (n) => (n in files ? getText(hfResolveIn(dataset, rev, `${path}/${n}`)).catch(() => null) : Promise.resolve(null));
   const json = async (n) => { try { return JSON.parse(await read(n)); } catch { return null; } };
   const plans = Object.fromEntries(await Promise.all(names.filter((n) => /^jobs\/\.plan\/[^/]+\.json$/.test(n))
@@ -180,5 +189,66 @@ export async function readLoose(dataset, rev, path, key) {
   };
   const redaction = red && typeof red === "object"
     ? Object.fromEntries(["notice", "sanitized_copy", "official", "provider_alias"].filter((k) => k in red).map((k) => [k, red[k]])) : null;
-  return { man, runId, trials, batches, official: red?.official ?? null, redaction, hardware: man.parsed.host || man.parsed.gpus.length ? "batch log" : null };
+  return { layout: "loose", man, runId, trials, batches, official: red?.official ?? null, redaction, hardware: man.parsed.host || man.parsed.gpus.length ? "batch log" : null };
+}
+
+// ---------- a delivery of Harbor's own output (harbor run, without RoboARC's runner) ----------
+
+export const HARBOR_UNOFFICIAL = "Harbor's own output (harbor run) without RoboARC's runner: no batch plan, no seeds drawn by "
+  + "the runner and no official results";
+// the agent options shown with their values; any other option is named only (it may carry a credential)
+const HARBOR_KWARGS = ["version", "reasoning_effort", "web_search", "max_turns", "max_budget_usd"];
+
+// {job folder: its trial folders}: the job folder is the delivery itself ("") or a folder in it ("<job>/"). A job folder
+// has Harbor's config.json and trial folders, each with its own config.json and a result.json or trial.log.
+export function harborJobDirs(files) {
+  const names = Object.keys(files), out = {};
+  const tops = [...new Set(names.filter((n) => n.includes("/")).map((n) => `${n.split("/")[0]}/`))].sort();
+  for (const pre of ["", ...tops]) {
+    if (!(`${pre}config.json` in files)) continue;
+    const subs = new Set(names.filter((n) => n.startsWith(pre) && n.slice(pre.length).includes("/")).map((n) => n.slice(pre.length).split("/")[0]));
+    const trials = [...subs].filter((t) => `${pre}${t}/config.json` in files && (`${pre}${t}/result.json` in files || `${pre}${t}/trial.log` in files)).sort();
+    if (trials.length) out[pre] = trials;
+  }
+  return out;
+}
+
+// The run id RoboARC's runner gives these settings (D4, scripts/harbor/run_agent_batch.sh): <harness>-<model>-<effort>.
+export function runIdOf(agent, model, effort) {
+  const f = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const m = model.split("/").pop().toLowerCase().replace(/^claude-/, "").replace(/^gpt-(\d+)/, "gpt$1");
+  return `${f(agent)}-${f(m)}-${f(effort || "default")}`;
+}
+
+// The run settings from each job's config.json and one trial per trial folder (awaiting digest), as tools/digest.py
+// gather_harbor reads them. Unofficial: no plan, seeds or official results.
+async function readHarbor(dataset, rev, path, key, files, dirs) {
+  const settings = await Promise.all(Object.entries(dirs).map(async ([pre, ts]) => {
+    let c = {};
+    try { c = JSON.parse(await getText(hfResolveIn(dataset, rev, `${path}/${pre}config.json`))) || {}; } catch { c = {}; }
+    const agent = (Array.isArray(c.agents) && c.agents[0]) || {}, kw = agent.kwargs || {};
+    return { job: c.job_name || pre.replace(/\/$/, "") || path.split("/")[1], pre, folder: pre || "./", agent: agent.name, model: agent.model_name,
+      options: Object.fromEntries(HARBOR_KWARGS.filter((k) => k in kw).map((k) => [k, kw[k]])),
+      other_options: Object.keys(kw).filter((k) => !HARBOR_KWARGS.includes(k)).sort(),
+      tasks: (c.datasets || []).flatMap((d) => d.task_names || []), trial_dirs: ts.length, ts };
+  }));
+  const first = settings[0], effort = first.options.reasoning_effort;
+  const runId = first.agent && first.model ? runIdOf(first.agent, first.model, effort) : null;
+  const MODE = /-(privileged|standard-realtime|standard)$/;
+  const trials = settings.flatMap((s) => s.ts.map((d) => {
+    const task = s.tasks.length === 1 ? s.tasks[0] : "";   // a job of several tasks: each trial's is in its result.json (digest)
+    return { bundle: key, job: s.job, trial_dir: d, base: task.replace(MODE, "") || null, mode: task.match(MODE)?.[1] || null,
+      k: null, seed: null, run_id: runId, reward: null, exception: `${s.pre}${d}/exception.txt` in files, result: "pending",
+      result_source: "index", archive: `${path}/${s.pre}${d}/`, live: true };
+  }));
+  const parsed = { gpus: [], runner: {
+    agent: first.agent, model: first.model, effort: effort || "default", run_id: runId,
+    modes: [...new Set(settings.flatMap((s) => s.tasks.map((t) => t.match(MODE)?.[1]).filter(Boolean)))].sort(),
+    web_search: first.options.web_search || "–",
+    usage_gateway: Object.keys(files).some((n) => n.endsWith("/gateway/totals.json")) ? "on (the trials' gateway/ records)" : "off",
+    gpu_placement: "none (no RoboARC runner)" },
+    trials: { planned_jobs: settings.length, trial_dirs: trials.length,
+      with_verdict: trials.filter((t) => `${t.archive.slice(path.length + 1)}verifier/reward.json` in files).length } };
+  return { layout: "harbor", man: { parsed, raw: {} }, runId, trials, batches: [], official: false, redaction: null,
+    unofficial_reason: HARBOR_UNOFFICIAL, harbor_jobs: settings.map(({ pre, ts, ...s }) => s), hardware: null };
 }

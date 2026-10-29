@@ -60,6 +60,14 @@ dataset. A `REDACTION.json` with `"official": false` (a helper's own redacted co
 listed under "Unofficial deliveries" and in the deliveries table, and kept out of the progress, the estimates, the task
 matrix and the daily progress text.
 
+A delivery of Harbor's own output, as `harbor run` wrote it without RoboARC's runner, is read too: one job folder
+(`config.json`, `result.json`, `job.log` and a folder per trial) as the bundle itself, or job folders one level down. Its
+run settings are the jobs' `config.json` (the agent, the model and its options; options other than the version, the
+reasoning effort, web search and the turn and budget limits are named without their value), and its run id is the one the
+runner would give those settings. It has no batch plan, no seeds drawn by the runner and no official results, so it is
+always unofficial (tagged "Harbor job"); its trials have no trial number or seed, and their timelines read the trial
+folders file by file.
+
 ## Set up
 
 1. Create a GitHub repository and push this directory to its `main` branch.

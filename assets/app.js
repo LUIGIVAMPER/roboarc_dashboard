@@ -77,7 +77,7 @@ async function refreshLive() {
       const [helper, batch, bundle] = b.path.split("/");
       let runId = idx.run_id || man.parsed.runner?.run_id || null;
       let ts = trialsFromIndex(idx, b.key, b.path, runId), loose = null;
-      if (err.length === 2) {   // no MANIFEST.md and no index.json: the runner's folders as loose files?
+      if (err.length === 2) {   // no MANIFEST.md and no index.json: the runner's folders as loose files, or Harbor's job folders?
         loose = await readLoose(S.dataset, b.rev, b.path, b.key).catch(() => null);
         if (loose) { man = loose.man; runId = loose.runId; ts = loose.trials; err = []; }
       }
@@ -87,7 +87,8 @@ async function refreshLive() {
         url: hfBlob(b.rev, b.path), run_id: runId, manifest: man.parsed, manifest_fields: man.raw, manifest_raw: man.raw,
         jobs: loose ? new Set(ts.map((t) => t.job)).size : (idx.jobs || []).length, trials: ts.length, errors: err, pending: true,
         hardware_source: loose ? loose.hardware : man.parsed.host || man.parsed.gpus?.length ? "MANIFEST.md" : null,
-        ...(loose ? { layout: "loose", batches: loose.batches, official: loose.official, redaction: loose.redaction } : {}),
+        ...(loose ? { layout: loose.layout, batches: loose.batches, official: loose.official, redaction: loose.redaction,
+          unofficial_reason: loose.unofficial_reason, harbor_jobs: loose.harbor_jobs } : {}),
       };
     });
     S.live = { bundles, trials, listed: listed.map((b) => b.key), error: null, at: new Date().toISOString(), info };
@@ -291,12 +292,12 @@ function renderCards() {
     <tbody>${others.map((p) => `<tr><td><code>${esc(p.id.slice(6))}</code></td><td>${esc([...p.helpers].join(", "))}</td>
       <td class="mono">${p.ok + p.fail} / ${p.total}</td><td class="mono">${p.ok} / ${p.fail}</td><td class="mono">${p.void}</td><td>${when(p.last)}</td></tr>`).join("")}</tbody></table></div>` : "")
     + (unofficial.length ? `<div class="table-wrap"><table>
-    <thead><tr><th>Unofficial deliveries, not counted above</th><th>Helper</th><th>Pair</th><th>Trials</th><th>Success / fail / not a result / awaiting</th><th>Delivered</th><th>Why unofficial (the helper's REDACTION.json)</th></tr></thead>
+    <thead><tr><th>Unofficial deliveries, not counted above</th><th>Helper</th><th>Pair</th><th>Trials</th><th>Success / fail / not a result / awaiting</th><th>Delivered</th><th>Why unofficial</th></tr></thead>
     <tbody>${unofficial.map((b) => {
       const c = statusCounts(b.key);
       return `<tr class="clickable" data-bundle="${esc(b.key)}" tabindex="0"><td class="mono">${esc(b.batch)}<br><span class="faint">${esc(b.bundle)}</span></td><td>${esc(b.helper)}</td>
         <td>${esc(pairLabel(pairOf(b, null)))}</td><td class="mono">${b.trials}</td><td class="mono">${c.ok} / ${c.fail} / ${c.void} / ${c.wait}</td><td class="nowrap">${when(b.uploaded_at)}</td>
-        <td class="small">${esc(b.redaction?.notice || "marked \"official\": false")}</td></tr>`;
+        <td class="small">${esc(b.unofficial_reason || b.redaction?.notice || "the helper's REDACTION.json: \"official\": false")}</td></tr>`;
     }).join("")}</tbody></table></div>` : "");
 }
 
@@ -396,12 +397,13 @@ function renderHosts() {
           <dt>Parallelism</dt><dd>${log.lanes ? `${log.lanes} runner(s), concurrency ${log.concurrency_max ?? "–"} per Harbor job` : (b.pending ? "awaiting digest" : "–")}</dd>
           <dt>Trials per task</dt><dd>${m.K ? `K = ${m.K}` : "–"}</dd>
           <dt>${b.batches?.length > 1 ? `These ${b.batches.length} batches` : "This batch"}</dt><dd>${m.trials ? `${esc(m.trials.planned_jobs)} jobs planned, ${esc(m.trials.trial_dirs)} trial dirs, ${esc(m.trials.with_verdict)} with a verdict` : "–"}</dd>
-          <dt>Code</dt><dd class="mono">${esc(raw.repo || (b.layout === "loose" ? "– (loose files: no MANIFEST.md)" : "–"))}</dd>
+          <dt>Code</dt><dd class="mono">${esc(raw.repo || (b.layout === "loose" ? "– (loose files: no MANIFEST.md)" : b.layout === "harbor" ? "– (Harbor's own output: no MANIFEST.md)" : "–"))}</dd>
           <dt>Images</dt><dd class="mono small">${esc(raw.images || "–").replace(/\n/g, "<br>")}</dd>
         </dl>
       </div>
       ${raw.notes && raw.notes !== "none" ? `<div class="small"><b>Helper's notes: </b>${esc(raw.notes)}</div>` : ""}
       ${b.redaction?.notice ? `<div class="small"><b>Helper's REDACTION.json: </b>${esc(b.redaction.notice)}</div>` : ""}
+      ${b.unofficial_reason ? `<div class="small"><b>Unofficial: </b>${esc(b.unofficial_reason)}</div>` : ""}
     </article>`;
   }).join("");
 }
@@ -525,10 +527,12 @@ function renderHardware() {
   }).join("");
 }
 
-// A delivery of the runner's folders as loose files (no send_results.sh, so no MANIFEST.md), and one marked unofficial.
+// A delivery of the runner's folders as loose files (no send_results.sh, so no MANIFEST.md), one of Harbor's own job
+// folders (no RoboARC runner), and one unofficial.
 function deliveryTags(b) {
   return (b.layout === "loose" ? ` <span class="tag" title="the runner's jobs/ and results/ folders as loose files, without send_results.sh: no MANIFEST.md, so the code commit, the images and the machine are unknown">loose files</span>` : "")
-    + (b.official === false ? ` <span class="tag warn" title="${esc(b.redaction?.notice || "REDACTION.json: \"official\": false")}">unofficial: not counted</span>` : "");
+    + (b.layout === "harbor" ? ` <span class="tag" title="Harbor's own job folders (harbor run), without RoboARC's runner and send_results.sh: no MANIFEST.md, batch plan, seeds or official results; the code commit, the images and the machine are unknown">Harbor job</span>` : "")
+    + (b.official === false ? ` <span class="tag warn" title="${esc(b.unofficial_reason || b.redaction?.notice || "REDACTION.json: \"official\": false")}">unofficial: not counted</span>` : "");
 }
 
 // The reasoning effort the trials ran with (tools/digest.py): Codex's session log names it, its config.toml included;
@@ -750,6 +754,8 @@ async function openBundle(key) {
     html += `<div><h4>Loose files</h4><p class="small">The runner's <code>jobs/</code> and <code>results/</code> folders as loose files, without <code>scripts/send_results.sh</code>: no MANIFEST.md, so the code commit, the images and the machine are unknown. The run settings are the batch log's runner line: <code>${esc(raw.runner || "–")}</code>. Batches: ${(b.batches || []).map((x) => `<code>${esc(x)}</code>`).join(", ") || "none found"}.</p></div>`;
     const red = d?.redaction || b.redaction;
     if (red) html += `<div><h4>REDACTION.json${b.official === false ? ": unofficial, not counted in the progress" : ""}</h4>${jsonPre(red)}</div>`;
+  } else if (b.layout === "harbor") {
+    html += `<div><h4>Harbor job</h4><p class="small">Harbor's own output as <code>harbor run</code> wrote it, without RoboARC's runner and <code>scripts/send_results.sh</code>: no MANIFEST.md, so the code commit, the images and the machine are unknown, and no batch plan, no seeds drawn by the runner and no official results, so it is unofficial and not counted in the progress. The run settings are the jobs' <code>config.json</code>; the agent's options other than its version, reasoning effort, web search and turn and budget limits are named without their value (<code>other_options</code>), since one may carry a credential:</p>${jsonPre(b.harbor_jobs || [])}</div>`;
   } else if (d?.manifest_text) html += `<div><h4>MANIFEST.md</h4>${pre(d.manifest_text)}</div>`;
   else if (b.pending) html += `<div><h4>MANIFEST.md</h4>${pre(Object.entries(raw).map(([k, v]) => `${k}: ${v}`).join("\n"))}</div>`;
   if (d?.log_notable?.length) html += `<div><h4>Error and rerun lines of the batch log</h4>${pre(d.log_notable)}</div>`;
