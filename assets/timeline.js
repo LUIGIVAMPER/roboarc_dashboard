@@ -262,6 +262,8 @@ async function loadTrialRecord() {
       t = trialsFromIndex(idx || {}, key, T.path, runId).find((x) => x.job === T.job && x.trial_dir === T.trial) || null;
     }
   }
+  const byHand = (await getJSON(`data/unofficial.json?v=${minuteStamp()}`, { optional: true }).catch(() => null))?.bundles?.[key];
+  if (b && byHand) b = { ...b, official: false, unofficial_reason: byHand };   // kept out of the progress by hand
   return { b, t, detail, others };
 }
 

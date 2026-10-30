@@ -1,0 +1,6 @@
+{
+ "note": "Deliveries kept out of the progress by hand: bundles[<bundle key>] = the reason, shown on the page. The key is the bundle's path with \"/\" as \"__\" (<helper>__<batch>__<bundle id>). A delivery whose REDACTION.json says \"official\": false, and a delivery of Harbor's own job folders, are unofficial without an entry here.",
+ "bundles": {
+  "tanreuben__copilot-opus55-v2314-claws08-20261029-194944__20261030T0350Z": "a Copilot reverse-proxy pilot (MANIFEST notes: \"Unofficial Copilot reverse-proxy pilot\"); not counted in the progress (2026-10-30)"
+ }
+}

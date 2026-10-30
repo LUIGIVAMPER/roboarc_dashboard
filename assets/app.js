@@ -12,7 +12,7 @@ const MODES = ["privileged", "standard"];
 const MODE_LABEL = { privileged: "privileged", standard: "standard" };
 
 const S = {
-  tasks: null, targets: [], digest: { bundles: [], trials: [] }, frames: {}, helpers: {}, shareBlocks: [],
+  tasks: null, targets: [], digest: { bundles: [], trials: [] }, frames: {}, helpers: {}, unofficial: {}, shareBlocks: [],
   dataset: DEFAULT_DATASET,
   live: { bundles: [], trials: [], listed: null, error: null, at: null, info: null },
   details: {},          // bundle key -> detail file (lazy)
@@ -116,9 +116,12 @@ function pairOf(bundle, trial) {
 function buildModel() {
   const listed = S.live.listed ? new Set(S.live.listed) : null;
   const digestB = S.digest.bundles.map((b) => ({ ...b, pending: false, gone: listed ? !listed.has(b.key) : false }));
-  const bundles = [...S.live.bundles, ...digestB].sort((a, b) => String(b.uploaded_at || "").localeCompare(String(a.uploaded_at || "")));
+  // a delivery listed in data/unofficial.json is unofficial too, for the reason given there
+  const byHand = (b) => S.unofficial[b.key] ? { ...b, official: false, unofficial_reason: S.unofficial[b.key] } : b;
+  const bundles = [...S.live.bundles, ...digestB].map(byHand).sort((a, b) => String(b.uploaded_at || "").localeCompare(String(a.uploaded_at || "")));
   const bmap = Object.fromEntries(bundles.map((b) => [b.key, b]));
-  // a delivery its helper marked unofficial (REDACTION.json "official": false) is shown, but kept out of the progress
+  // a delivery marked unofficial (REDACTION.json "official": false, Harbor job folders, data/unofficial.json) is shown,
+  // but kept out of the progress
   const trials = [...S.digest.trials, ...S.live.trials].filter((t) => !bmap[t.bundle]?.gone).map((t) => {
     const b = bmap[t.bundle];
     return { ...t, pair: pairOf(b, t), status: statusOf(t), when: t.finished_at || b?.uploaded_at || "", unofficial: b?.official === false };
@@ -807,12 +810,14 @@ async function reloadDigest() {
 }
 
 async function start() {
-  const [tasks, targets, frames, helpers] = await Promise.all([
+  const [tasks, targets, frames, helpers, unofficial] = await Promise.all([
     getJSON(`data/tasks.json?v=${minuteStamp()}`), getJSON(`data/targets.json?v=${minuteStamp()}`),
     getJSON(`data/frames.json?v=${minuteStamp()}`, { optional: true }).catch(() => null),
     getJSON(`data/helpers.json?v=${minuteStamp()}`, { optional: true }).catch(() => null),
+    getJSON(`data/unofficial.json?v=${minuteStamp()}`, { optional: true }).catch(() => null),
   ]);
   S.tasks = tasks; S.targets = targets.targets; S.frames = frames?.frames || {}; S.helpers = helpers?.names || {};
+  S.unofficial = unofficial?.bundles || {};
   await reloadDigest();
   if (S.digest.dataset && !S.digest.dataset.startsWith("/")) S.dataset = S.digest.dataset;
   $("#ds-link").href = `${HF}/datasets/${S.dataset}`;

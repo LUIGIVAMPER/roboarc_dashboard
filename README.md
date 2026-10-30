@@ -83,6 +83,7 @@ folders file by file.
 | `data/tasks.json` | `python3 tools/build_tasks.py <RoboARC checkout> [--ref origin/main]` | after a RoboARC release that changes the task bases |
 | `data/targets.json` | by hand | the harness + model pairs the run must cover, with the patterns that match a delivery's runner line or run id |
 | `data/helpers.json` | by hand | the name printed for each helper in the daily progress text |
+| `data/unofficial.json` | by hand | a delivery to keep out of the progress that its helper did not mark unofficial: `bundles[<helper>__<batch>__<bundle id>]` = the reason shown on the page |
 | `data/frames.json`, `frames/` | by hand (renders) | first frames: `frames[<base>][<seed>] = "frames/<base>/seed<k>.jpg"` |
 | `data/digest.json`, `data/bundles/` | `tools/digest.py` (the workflow) | never by hand |
 
