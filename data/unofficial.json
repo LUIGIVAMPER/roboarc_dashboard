@@ -3,6 +3,7 @@
  "bundles": {
   "tanreuben__copilot-opus55-v2314-claws08-20261029-194944__20261030T0350Z": "a Copilot reverse-proxy pilot (MANIFEST notes: \"Unofficial Copilot reverse-proxy pilot\"); not counted in the progress (2026-10-30)",
   "tanreuben__copilot-opus55-all-claws-k3-20261029-220532__20261031T0113Z": "a smoke test: Claude Code + Opus 5.5 through a Copilot reverse proxy, 22 privileged trials on the claws family; not counted in the progress (2026-10-30)",
-  "tanreuben__copilot-astra-claws08-smoke-20261031-094618__20261031T1947Z": "a smoke test: Codex + GPT-6 Astra through a Copilot proxy, claws-08 in both modes (MANIFEST notes: \"Unofficial Copilot proxy\"); not counted in the progress (2026-10-31)"
+  "tanreuben__copilot-astra-claws08-smoke-20261031-094618__20261031T1947Z": "a smoke test: Codex + GPT-6 Astra through a Copilot proxy, claws-08 in both modes (MANIFEST notes: \"Unofficial Copilot proxy\"); not counted in the progress (2026-10-31)",
+  "tanreuben__copilot-astra-claws08-standard-low-20261031-164953__20261101T1549Z": "a smoke test: Codex + GPT-6 Astra (effort low) through a Copilot proxy, claws-08 standard only, checking the gateway's image cap (MANIFEST notes: \"Unofficial Copilot proxy\"); not counted in the progress (2026-11-01)"
  }
 }
