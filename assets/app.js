@@ -219,7 +219,7 @@ function buildModel() {
     p.time = { median: median(durs.p[id]), est: estimate(pace(timed.filter((t) => t.pair === id)), workLeft(id), p.ok + p.fail) };
     pairs[id] = p;
   }
-  // all six pairs together: their combined pace, and the work left over all of them
+  // all pairs together: their combined pace, and the work left over all of them
   const targetIds = S.targets.map((t) => t.id);
   const works = targetIds.map(workLeft);
   const countedAll = targetIds.reduce((a, id) => a + pairs[id].ok + pairs[id].fail, 0);
@@ -258,7 +258,7 @@ function timeStats(tm) {
 function renderOverall() {
   const o = S.model.overall, e = o.est;
   $("#overall").innerHTML = `<div class="panel overall">
-    <div><span class="k">All six pairs</span><span class="v"><b>${o.counted}</b> / ${o.total} trials with a result</span></div>
+    <div><span class="k">All ${S.targets.length} pairs</span><span class="v"><b>${o.counted}</b> / ${o.total} trials with a result</span></div>
     <div><span class="k">Pace</span><span class="v">${e ? `${e.perDay.toFixed(1)} trials / day` : "–"}</span></div>
     <div><span class="k">Elapsed</span><span class="v">${e ? fmtDays(e.span) : "–"}</span></div>
     <div title="${esc(EST_HELP)}"><span class="k">Est. total (${o.total})</span><span class="v">${e?.total != null ? `${fmtDays(e.total)}, done around ${fmtDate(Date.now() + e.left * 1000)}` : "–"}</span></div>
@@ -298,7 +298,7 @@ function renderCards() {
   const others = Object.values(pairs).filter((p) => p.id.startsWith("other:"));
   const unofficial = S.model.bundles.filter((b) => b.official === false && !b.gone);
   $("#other-runs").innerHTML = (others.length ? `<div class="table-wrap"><table>
-    <thead><tr><th>Runs outside the six pairs (run id)</th><th>Helper</th><th>With a result</th><th>Success / fail</th><th>Not a result</th><th>Last delivery</th></tr></thead>
+    <thead><tr><th>Runs outside the ${S.targets.length} pairs (run id)</th><th>Helper</th><th>With a result</th><th>Success / fail</th><th>Not a result</th><th>Last delivery</th></tr></thead>
     <tbody>${others.map((p) => `<tr><td><code>${esc(p.id.slice(6))}</code></td><td>${esc([...p.helpers].join(", "))}</td>
       <td class="mono">${p.ok + p.fail} / ${p.total}</td><td class="mono">${p.ok} / ${p.fail}</td><td class="mono">${p.void}</td><td>${when(p.last)}</td></tr>`).join("")}</tbody></table></div>` : "")
     + (unofficial.length ? `<div class="table-wrap"><table>
