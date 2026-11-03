@@ -126,7 +126,14 @@ function buildModel() {
     const b = bmap[t.bundle];
     return { ...t, pair: pairOf(b, t), status: statusOf(t), when: t.finished_at || b?.uploaded_at || "", unofficial: b?.official === false };
   });
-  const counted = trials.filter((t) => !t.unofficial);
+  // send_results.sh packs every job of the batch each time, so a later delivery of a batch carries its earlier trials
+  // again: a trial (helper, job, trial directory) counts once, from the latest delivery that has it
+  const newest = {};
+  const keyOf = (t) => (t.job && t.trial_dir ? `${bmap[t.bundle]?.helper}|${t.job}|${t.trial_dir}` : null);
+  const age = (t) => `${bmap[t.bundle]?.uploaded_at || ""}|${t.bundle}`;
+  for (const t of trials) { const k = keyOf(t); if (k && (!newest[k] || age(t) > age(newest[k]))) newest[k] = t; }
+  const latest = trials.filter((t) => !keyOf(t) || newest[keyOf(t)] === t);
+  const counted = latest.filter((t) => !t.unofficial);
   const baseSet = new Set(S.tasks.tasks.map((x) => x.base));
   const K = S.tasks.trials_per_task_mode;
 
@@ -220,7 +227,7 @@ function buildModel() {
     counted: countedAll, total: targetIds.length * S.tasks.tasks.length * MODES.length * K,
     est: estimate(pace(timed.filter((t) => targetIds.includes(t.pair))), works.includes(null) ? null : works.reduce((a, w) => a + w, 0), countedAll),
   };
-  S.model = { bundles, bmap, trials, eff, pairs, K, durs, overall };
+  S.model = { bundles, bmap, trials, latest, eff, pairs, K, durs, overall };
 }
 
 // ---------- rendering ----------
@@ -479,7 +486,7 @@ function renderHardware() {
   }
   $("#hardware").innerHTML = list.map((mc) => {
     const keys = new Set(mc.bundles.map((b) => b.key));
-    const ts = S.model.trials.filter((t) => keys.has(t.bundle));
+    const ts = S.model.latest.filter((t) => keys.has(t.bundle));
     const timed = ts.filter((t) => t.started_at && t.finished_at);
     const peak = peakLoad(timed, kindOf);
     const host = mc.host || {};
@@ -582,7 +589,7 @@ function errorRows() {
   const rows = [];
   const rerun = new Set();
   for (const e of Object.values(S.model.eff)) if (e.attempts.length > 1) e.attempts.forEach((t) => rerun.add(t));
-  for (const t of S.model.trials) {
+  for (const t of S.model.latest) {
     const kinds = [];
     if (t.status === "void") kinds.push(t.result === "no_verdict" ? "no_verdict" : "void");
     // an agent that ran out of time (AgentTimeoutError) ended with a result, the agent's 0: not an error
