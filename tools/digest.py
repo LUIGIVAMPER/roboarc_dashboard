@@ -53,7 +53,9 @@ SESSION_HEAD = 1 << 20
 # batch log's "start" lines of the current runner ("(concurrency N; trial ...)") give the concurrency; loose deliveries.
 # 4: the machine from the batch log's host lines, the jobs' host.json or placement.json; each trial's GPU. 5: each
 # trial's reasoning effort as run (the Codex session log, else the effort the job's config.json passed to the harness).
-DIGEST_VERSION = 5
+# 6: a trial directory without a verdict in a job whose other trial directory has one is an attempt the runner voided.
+DIGEST_VERSION = 6
+SUPERSEDED = "an earlier attempt of this job, voided by the runner and run again"
 
 
 def now():
@@ -610,6 +612,7 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
     man, log, plan, results, run_id, errors = g["man"], g["log"], g["plan"], g["results"], g["run_id"], g["errors"]
 
     trials, detail, jobs_info = [], {}, []
+    judged = {job for job, _ in results}   # jobs the runner gave a verdict, to one of their trial directories
     for j in g["jobs"]:
         per, seed_rec, job_info, err = g["read_job"](j["job"])
         if err:
@@ -628,6 +631,9 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
             reward = t["reward"] if t.get("reward") is not None else d.get("reward")   # loose: no index.json
             if c.get("result"):
                 result, source = c["result"], "results"
+            elif j["job"] in judged:
+                # the runner judged another trial directory of this job: this one is an attempt it voided and ran again
+                result, source = "not_a_result", "superseded"
             elif reward is not None:
                 result, source = ("success" if reward >= 1 else "fail"), "index"
             else:
@@ -637,7 +643,7 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
                 "k": c.get("trial") if isinstance(c.get("trial"), int) else p.get("trial"),
                 "seed": c.get("seed") if isinstance(c.get("seed"), int) else p.get("seed"),
                 "run_id": c.get("run_id") or run_id, "result": result, "result_source": source,
-                "reason": c.get("not_a_result_reason"), "counted": c.get("counted"),
+                "reason": c.get("not_a_result_reason") or (SUPERSEDED if source == "superseded" else None), "counted": c.get("counted"),
                 "attempts": c.get("attempts"), "attempts_over_cap": c.get("attempts_over_cap"),
                 "reward": t.get("reward"), "exception": bool(t.get("exception")),
                 "archive": g["archive"](j["job"], t["trial_dir"]),
