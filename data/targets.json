@@ -11,8 +11,8 @@
    "match": {"harness": "antigravity", "model": "gemini[-_.]?4[-_.]?argon"}},
   {"id": "dsh-deepseek-v4-1-flash", "harness": "DSH", "model": "DeepSeek V4.1 Flash",
    "match": {"harness": "dsh", "model": "deepseek[-_.]?v?4[-_.]?1[-_.]?flash"}},
-  {"id": "copilot-glm-5-3", "harness": "Copilot", "model": "GLM 5.3", "via": "Copilot reverse proxy",
-   "match": {"harness": "copilot", "model": "glm[-_.]?5[-_.]?3"}},
+  {"id": "claude-code-glm-5-3-flash", "harness": "Claude Code", "model": "GLM 5.3 Flash",
+   "match": {"harness": "claude[-_]?code", "model": "glm[-_.]?5[-_.]?3[-_.]?flash"}},
   {"id": "claude-code-qwen-3-8-max", "harness": "Claude Code", "model": "Qwen 3.8 Max", "via": "OpenRouter", "tentative": true,
    "match": {"harness": "claude[-_]?code", "model": "qwen[-_.]?3[-_.]?8[-_.]?max"}}
  ]
