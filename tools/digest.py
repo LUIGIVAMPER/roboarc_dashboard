@@ -56,6 +56,7 @@ SAMPLES = "artifacts/var/rcb-monitor/samples.jsonl"   # the resource monitor's s
 # (some 80 KB in), names the reasoning effort Codex ran with. Only the start is read, of any size.
 CODEX_SESSION = re.compile(r"agent/sessions/(?:[^/]+/)*rollout-[^/]+\.jsonl")
 SESSION_HEAD = 1 << 20
+STREAMS = 8              # job archives read at once: one stream from the dataset is network-bound (about 15 MB/s)
 # A bundle digested by an older version of this script is digested again. 2: the official per-trial results
 # (results/<batch>/.../config.json) are matched to their trial by its directory, not by its trial number. 3: the
 # batch log's "start" lines of the current runner ("(concurrency N; trial ...)") give the concurrency; loose deliveries.
@@ -631,7 +632,7 @@ def gather_archives(src, rev, path, listing, cache, old_detail):
     job_of = lambda n: n[len("jobs/"):-len(".tar.gz")].split("__", 1)[0]
     todo = [n for n in names if (cache.get(n) or {}).get("size") != listing[n] or cache[n].get("error")]
     detail = {}
-    with ThreadPoolExecutor(4) as ex:
+    with ThreadPoolExecutor(STREAMS) as ex:
         for n, (per, seed, info, err) in zip(todo, ex.map(lambda n: digest_job(src, rev, path, job_of(n), None, f"{path}/{n}"), todo)):
             print(f"  {n}: {len(per)} trial dir(s){', ' + err if err else ''}", flush=True)
             for d, rec in per.items():
@@ -736,8 +737,9 @@ def digest_bundle(src, key, rev, label, path, uploaded_at, cache=None, old_detai
 
     trials, detail, jobs_info = [], {}, []
     judged = {job for job, _ in results}   # jobs the runner gave a verdict, to one of their trial directories
-    for j in g["jobs"]:
-        per, seed_rec, job_info, err = g["read_job"](j["job"])
+    with ThreadPoolExecutor(STREAMS) as ex:
+        reads = list(ex.map(lambda j: g["read_job"](j["job"]), g["jobs"]))
+    for j, (per, seed_rec, job_info, err) in zip(g["jobs"], reads):
         if err:
             errors.append(f"{j['job']}: {err}")
         jobs_info.append(job_info)
@@ -819,7 +821,11 @@ def main():
     ap.add_argument("--local")
     ap.add_argument("--out", default=os.path.join(DATA, "digest.json"))
     ap.add_argument("--redo", action="store_true", help="digest every bundle again")
+    ap.add_argument("--minutes", type=float, default=150,
+                    help="start no new digest after this long; the deliveries left wait for the next run (the workflow "
+                         "stops at 180 min and keeps nothing of an unfinished run)")
     args = ap.parse_args()
+    t0 = time.time()
     src = Local(args.local) if args.local else Hub(args.dataset)
     bdir = os.path.join(os.path.dirname(os.path.abspath(args.out)), "bundles")
     os.makedirs(bdir, exist_ok=True)
@@ -845,6 +851,12 @@ def main():
             if b["revision"] != rev:   # a pull request merged since: the same bundle, now in main
                 b.update(revision=rev, source=label, url=src.url(rev, path), uploaded_at=date or b.get("uploaded_at"))
                 new += 1
+        elif time.time() - t0 > args.minutes * 60:   # out of time: the next run digests it
+            print(f"left for the next run: {label} {path}", flush=True)
+            if key not in old:
+                seen.discard(key)
+                continue
+            b, ts = old[key]
         else:
             print(f"digest {label} {path}", flush=True)
             dfile, cfile = os.path.join(bdir, f"{key}.json"), os.path.join(bdir, f"{key}.archives.json")

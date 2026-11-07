@@ -13,7 +13,9 @@ reruns with their logs, a per-task matrix and the first frames.
 - `tools/digest.py` (standard library only) reads every new delivery in full: the official per-trial results from
   `batch.tar.gz`, and from each `jobs/<job>.tar.gz` the Harbor exception, the grader's reward fields, peak memory and GPU
   memory and the log tails. It writes `data/digest.json` and `data/bundles/*.json`. A delivery is never overwritten in
-  the dataset, so each one is digested once.
+  the dataset, so each one is digested once. It reads 8 job archives at once (one stream from the dataset runs at about
+  15 MB/s, and a standard-mode delivery can hold 75 GB), and starts no new delivery after 150 minutes (`--minutes`):
+  the workflow stops at 180 and keeps nothing of an unfinished run, so the deliveries left wait for the next run.
 - `.github/workflows/digest.yml` runs the digest every 30 minutes, commits `data/` when it changed and publishes the
   site to GitHub Pages.
 - Opening a trial (a row of the errors table, a square of the task matrix, a trial of a delivery) goes to its timeline,
