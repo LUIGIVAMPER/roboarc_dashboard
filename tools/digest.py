@@ -19,6 +19,14 @@ result.json, job.log and one folder per trial) as the bundle itself, or job fold
 from the jobs' config.json. It has no plan, seeds or official results (the runner draws the seeds and writes them), so
 it is unofficial: kept out of the progress.
 
+A delivery may also be job archives alone, without MANIFEST.md, index.json or batch.tar.gz: a helper's own uploads of
+each job as it finishes (jobs/<job>.tar.gz, or jobs/<job>__<trial dir>.tar.gz with one archive per trial directory), each
+packed as send_results.sh packs a job, maybe with a README.md. Its run settings come from the jobs' config.json,
+usage_recording.json and placement.json and the trials' result.json; its trial numbers and seeds from the jobs' seed.json
+(the runner's); each trial's result from its own records, judged as the runner's write_task_results.py judges them
+(without its model-account check). Such a delivery grows while the batch runs, so it is digested again whenever its
+folder changes; an archive digested before (the same path and size) is taken from data/bundles/<key>.archives.json.
+
 Writes data/digest.json (every bundle's settings and machine, and one row per trial: task, mode, trial number, seed,
 result) and data/bundles/<helper>__<batch>__<bundle>.json (the bundle's MANIFEST.md, the batch log's notable lines and
 per trial the exception and log tails), which the page loads when a bundle or a trial is opened. Standard library only.
@@ -278,24 +286,30 @@ JOB_FILES = ("result.json", "exception.txt", "trial.log", "verifier/reward.json"
              "verifier/resource_limits.json", "verifier/grade.log", "verifier/reward.txt", "gateway/totals.json",
              SAMPLES)
 # a job folder's own records: its seeds, the runner's GPU and reservation, the machine (host_info.py, runners since 10-28),
-# Harbor's job configuration (the agent's options)
-JOB_LEVEL = ("seed.json", "placement.json", "host.json", "config.json")
+# Harbor's job configuration (the agent's options), the usage gateway's settings
+JOB_LEVEL = ("seed.json", "placement.json", "host.json", "config.json", "usage_recording.json")
 
 
-def digest_job(src, rev, path, job, jobs_dir):
-    """Per trial directory of one job archive: what the page shows (summary) and the log tails (detail)."""
-    f = src.open(rev, f"{path}/jobs/{job}.tar.gz")
+def digest_job(src, rev, path, job, jobs_dir, archive=None):
+    """Per trial directory of one job archive (jobs/<job>.tar.gz, or <archive>): what the page shows (summary) and the
+    log tails (detail). jobs_dir None: the archive's own top folder, whatever its name."""
+    f = src.open(rev, archive or f"{path}/jobs/{job}.tar.gz")
     if f is None:
         return {}, None, {}, "archive missing"
-    pre = f"{jobs_dir}/{job}/"
+    top = [jobs_dir]
 
     def want(name, size):
-        if name == f"{jobs_dir}/.seeds/{job}.json" or name in (pre + f for f in JOB_LEVEL):
-            return True
-        rest = name[len(pre):] if name.startswith(pre) else None
-        if not rest or "/" not in rest:
+        d, _, rest = name.partition("/")
+        if top[0] is None and (rest.startswith(job + "/") or rest == f".seeds/{job}.json"):
+            top[0] = d
+        if d != top[0]:
             return False
-        rel = rest.split("/", 1)[1]
+        if rest == f".seeds/{job}.json" or rest in (f"{job}/{x}" for x in JOB_LEVEL):
+            return True
+        sub = rest[len(job) + 1:] if rest.startswith(job + "/") else None
+        if not sub or "/" not in sub:
+            return False
+        rel = sub.split("/", 1)[1]
         return rel in JOB_FILES or (SESSION_HEAD if CODEX_SESSION.fullmatch(rel) else False)
 
     try:
@@ -304,7 +318,7 @@ def digest_job(src, rev, path, job, jobs_dir):
         return {}, None, {}, f"archive unreadable: {e}"
     finally:
         f.close()
-    return job_records(files, pre, f"{jobs_dir}/.seeds/{job}.json") + (None,)
+    return job_records(files, f"{top[0]}/{job}/", f"{top[0]}/.seeds/{job}.json") + (None,)
 
 
 def digest_job_loose(src, rev, path, job, listing, pre=None):
@@ -339,6 +353,8 @@ def job_records(files, pre, seed_name):
     cfg = load_json(files.get(pre + "config.json") or b"null") or {}
     agents = cfg.get("agents") if isinstance(cfg.get("agents"), list) else []
     given = ((agents[0] if agents else {}).get("kwargs") or {}).get("reasoning_effort")   # what Harbor passed (--ak)
+    usage = load_json(files.get(pre + "usage_recording.json") or b"null") or {}
+    harness = None   # the harness's own name (the trials' result.json agent_info), the runner's AGENT
     trials = {}
     for name, data in files.items():
         rest = name[len(pre):] if name.startswith(pre) else ""
@@ -349,6 +365,7 @@ def job_records(files, pre, seed_name):
     out = {}
     for trial, fs in trials.items():
         res = load_json(fs.get("result.json", b"null")) or {}
+        harness = harness or (res.get("agent_info") or {}).get("name")
         exc = res.get("exception_info") or {}
         rw = load_json(fs.get("verifier/reward.json", b"null")) or {}
         ar = res.get("agent_result") or {}
@@ -396,7 +413,10 @@ def job_records(files, pre, seed_name):
                 "gateway_totals": load_json(fs["gateway/totals.json"]) if "gateway/totals.json" in fs else None,
             },
         }
-    return out, seed, {"placement": place, "host": host}
+    agent = agents[0] if agents else {}
+    return out, seed, {"placement": place, "host": host, "usage_recording": usage,
+                       "agent": {"name": harness or agent.get("name"), "model": agent.get("model_name"), "effort": given,
+                                 "web_search": (agent.get("kwargs") or {}).get("web_search")} if agents else None}
 
 
 def gather_bundle(src, rev, path, man_b, idx):
@@ -571,6 +591,105 @@ def gather_harbor(src, rev, path, listing, dirs):
             "harbor": {"jobs": settings}}
 
 
+ARCHIVE = re.compile(r"jobs/([^/]+)\.tar\.gz")
+
+
+def archives_only(listing):
+    """Whether a delivery's jobs/ holds job archives only (jobs/<name>.tar.gz and their .sha256 files), no job folders."""
+    js = [n for n in listing if n.startswith("jobs/")]
+    return bool(js) and all(ARCHIVE.fullmatch(n) or re.fullmatch(r"jobs/[^/]+\.tar\.gz\.sha256", n) for n in js)
+
+
+def judge(rec):
+    """A trial's result from its own records, as the runner's write_task_results.py classify() judges it (PROTOCOL §2.6,
+    §5), without its model-account check: (result, the reason it is not a result)."""
+    det = rec.get("detail") or {}
+    rw, gw = det.get("reward") or {}, det.get("gateway_totals") or {}
+    over = bool(gw.get("over_token_budget"))   # over the token budget: the agent's failure, unless infrastructure
+    infra = bool(rw.get("infra_error") or rw.get("grader_error"))
+    ex = rec.get("exception_type") or ""
+    if rw.get("success") == 1 and not over and not infra:
+        return "success", None
+    if infra:
+        return "not_a_result", "`infra_error` / `grader_error` in the verifier line"
+    if over:
+        return "fail", None
+    if not rw:
+        return "not_a_result", "the verifier wrote no reward.json" + (f"; Harbor: `{ex}`" if ex else "")
+    if ex and ex != "AgentTimeoutError":
+        return "not_a_result", f"Harbor ended the trial with `{ex}`"
+    return "fail", None
+
+
+def gather_archives(src, rev, path, listing, cache, old_detail):
+    """A delivery of job archives alone (archives_only): one per job (jobs/<job>.tar.gz) or one per trial directory
+    (jobs/<job>__<trial dir>.tar.gz). An archive digested before is taken from cache ({archive: its records, without the
+    log tails}, updated here) when its size is unchanged, its log tails from old_detail (the bundle's detail file). The
+    run settings come from the jobs' config.json, usage_recording.json and placement.json and the README.md, each trial's
+    result from its own records (judge)."""
+    names = sorted(n for n in listing if ARCHIVE.fullmatch(n))
+    job_of = lambda n: n[len("jobs/"):-len(".tar.gz")].split("__", 1)[0]
+    todo = [n for n in names if (cache.get(n) or {}).get("size") != listing[n] or cache[n].get("error")]
+    detail = {}
+    with ThreadPoolExecutor(4) as ex:
+        for n, (per, seed, info, err) in zip(todo, ex.map(lambda n: digest_job(src, rev, path, job_of(n), None, f"{path}/{n}"), todo)):
+            print(f"  {n}: {len(per)} trial dir(s){', ' + err if err else ''}", flush=True)
+            for d, rec in per.items():
+                detail[f"{job_of(n)}/{d}"] = rec.pop("detail")
+            cache[n] = {"size": listing[n], "job": job_of(n), "per": per, "seed": seed, "info": info, "error": err}
+    for n in [n for n in cache if n not in listing]:   # an archive no longer in the delivery
+        del cache[n]
+
+    jobs, results, arch, errors = {}, {}, {}, []
+    for n in names:
+        a = cache[n]
+        if a["error"] or not a["per"]:
+            errors.append(f"{n}: {a['error'] or 'no trial directory of job ' + a['job']}")
+        j = jobs.setdefault(a["job"], {"job": a["job"], "tasks": [{}], "trials": [], "per": {}, "seed": None, "info": {}})
+        j["seed"], j["info"] = j["seed"] or a["seed"], j["info"] or a["info"]
+        seed = a["seed"] or {}
+        for d, rec in a["per"].items():
+            rec = dict(rec, detail=detail.get(f"{a['job']}/{d}") or old_detail.get(f"{a['job']}/{d}") or {})
+            j["per"][d], arch[(a["job"], d)] = rec, f"{path}/{n}"
+            j["trials"].append({"trial_dir": d, "exception": bool(rec["detail"].get("exception_tail"))})
+            task = (rec.get("task_name") or "").rsplit("/", 1)[-1]
+            tasks = seed.get("tasks") if isinstance(seed.get("tasks"), dict) else {}
+            s = (tasks.get(task) or (list(tasks.values())[0] if len(tasks) == 1 else {})).get("seed")
+            result, why = judge(rec)
+            results[(a["job"], d)] = {"result": result, "not_a_result_reason": why, "counted": result != "not_a_result",
+                                      "trial": seed.get("trial"), "seed": s, "source": "records"}
+
+    infos = [j["info"] for j in jobs.values() if j["info"]]
+    ag = next((i["agent"] for i in infos if i.get("agent")), None) or {}
+    usage = next((i["usage_recording"] for i in infos if i.get("usage_recording")), None) or {}
+    place = next((i["placement"] for i in infos if i.get("placement")), None) or {}
+    effort = ag.get("effort")
+    run_id = run_id_of(ag["name"], ag["model"], effort) if ag.get("name") and ag.get("model") else None
+    tb, mio = usage.get("token_budget") or {}, lambda x: f"{x / 1e6:g}M" if isinstance(x, (int, float)) else "?"
+    man = parse_manifest("")
+    man["runner"] = {
+        "agent": ag.get("name"), "model": ag.get("model"), "effort": effort or "default", "run_id": run_id,
+        "modes": sorted({m for j in jobs.values() for r in j["per"].values() for m in ("privileged", "standard", "standard-realtime")
+                         if (r.get("task_name") or "").endswith("-" + m)}),
+        "web_search": ag.get("web_search") or "–",
+        "usage_gateway": (f"on (per trial: token budget {mio(tb.get('input'))} input / {mio(tb.get('output'))} output, image cap "
+                          f"{usage.get('image_cap', '?')}; raw bodies {'on' if usage.get('raw_bodies') else 'off'})")
+                         if usage.get("usage_gateway") else "off" if usage else "–",
+        "gpu_placement": f"GPUs {place['gpus']}" + (", phase split" if place.get("phase_split") else "") if place.get("gpus") else None}
+    ks = [j["seed"]["trials"] for j in jobs.values() if isinstance((j["seed"] or {}).get("trials"), int)]
+    if ks:
+        man["K"] = max(ks)
+    man["trials"] = {"planned_jobs": "?", "trial_dirs": sum(len(j["trials"]) for j in jobs.values()),
+                     "with_verdict": sum((r.get("detail") or {}).get("reward") is not None for j in jobs.values() for r in j["per"].values())}
+    readme = src.read(rev, f"{path}/README.md") if "README.md" in listing else None
+    if readme:
+        man["raw"]["notes"] = readme.decode("utf-8", "replace").strip()[:2000]
+    return {"man": man, "manifest_text": None, "batch": path.split("/")[1], "run_id": run_id, "log": None, "summary": None,
+            "plan": None, "results": results, "jobs": [{k: j[k] for k in ("job", "tasks", "trials")} for j in jobs.values()],
+            "errors": errors, "read_job": lambda job: (jobs[job]["per"], jobs[job]["seed"], jobs[job]["info"], None),
+            "archive": lambda job, trial: arch[(job, trial)], "archives": len(names)}
+
+
 def machine(man, log_hw, jobs_info, trials):
     """Fill man's host, gpus and software with the machine the batch ran on, from the best record there is, and say which:
     the batch log's host lines (the machine that ran it), the jobs' host.json (the same record), MANIFEST.md (the machine
@@ -598,12 +717,16 @@ def machine(man, log_hw, jobs_info, trials):
     return None
 
 
-def digest_bundle(src, key, rev, label, path, uploaded_at):
+def digest_bundle(src, key, rev, label, path, uploaded_at, cache=None, old_detail=None):
+    """cache, old_detail: a delivery of job archives alone (gather_archives): its archives digested before, updated here,
+    and its last detail file's per-trial records."""
     man_b = src.read(rev, f"{path}/MANIFEST.md")
     idx = load_json(src.read(rev, f"{path}/index.json") or b"null") or {}
     listing = src.files(rev, path) if not man_b and not idx else None
     harbor = harbor_job_dirs(listing) if listing is not None and "batch.tar.gz" not in listing else {}
-    if listing is not None and "batch.tar.gz" not in listing and any(n.startswith("jobs/") for n in listing):
+    if listing is not None and "batch.tar.gz" not in listing and archives_only(listing):
+        g = gather_archives(src, rev, path, listing, {} if cache is None else cache, old_detail or {})
+    elif listing is not None and "batch.tar.gz" not in listing and any(n.startswith("jobs/") for n in listing):
         g = gather_loose(src, rev, path, listing)
     elif harbor:
         g = gather_harbor(src, rev, path, listing, harbor)
@@ -629,8 +752,8 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
             mode = c.get("mode") or next((m for m in ("standard-realtime", "privileged", "standard") if task.endswith("-" + m)),
                                          p.get("mode"))
             reward = t["reward"] if t.get("reward") is not None else d.get("reward")   # loose: no index.json
-            if c.get("result"):
-                result, source = c["result"], "results"
+            if c.get("result"):   # the runner's results, or a delivery of job archives alone: the trial's own records
+                result, source = c["result"], c.get("source", "results")
             elif j["job"] in judged:
                 # the runner judged another trial directory of this job: this one is an attempt it voided and ran again
                 result, source = "not_a_result", "superseded"
@@ -685,6 +808,8 @@ def digest_bundle(src, key, rev, label, path, uploaded_at):
         det["redaction"] = g["loose"]["redaction"]
     if "harbor" in g:   # Harbor's own output: unofficial; its jobs' settings go on the page
         b.update(layout="harbor", official=False, unofficial_reason=HARBOR_UNOFFICIAL, harbor_jobs=g["harbor"]["jobs"])
+    if "archives" in g:   # job archives alone: the helper's README.md goes on the page as the notes
+        b.update(layout="archives", archives=g["archives"])
     return b, trials, det
 
 
@@ -713,21 +838,31 @@ def main():
             continue
         seen.add(key)
         if (key in old and old[key][0].get("revision") in (rev, "main") and not old[key][0].get("errors")
-                and old[key][0].get("digest_version") == DIGEST_VERSION):
+                and old[key][0].get("digest_version") == DIGEST_VERSION
+                # a delivery of job archives alone grows while its batch runs: digested again when its folder changed
+                and not (old[key][0].get("layout") == "archives" and date and old[key][0].get("uploaded_at") != date)):
             b, ts = old[key]
             if b["revision"] != rev:   # a pull request merged since: the same bundle, now in main
                 b.update(revision=rev, source=label, url=src.url(rev, path), uploaded_at=date or b.get("uploaded_at"))
                 new += 1
         else:
             print(f"digest {label} {path}", flush=True)
-            b, ts, det = digest_bundle(src, key, rev, label, path, date)
-            with open(os.path.join(bdir, f"{key}.json"), "w") as f:
+            dfile, cfile = os.path.join(bdir, f"{key}.json"), os.path.join(bdir, f"{key}.archives.json")
+            keep = os.path.isfile(cfile) and not args.redo
+            cache = (load_json(open(cfile, "rb").read()) if keep else None) or {}
+            old_detail = ((load_json(open(dfile, "rb").read()) or {}).get("trials") or {}) if keep and os.path.isfile(dfile) else {}
+            b, ts, det = digest_bundle(src, key, rev, label, path, date, cache, old_detail)
+            with open(dfile, "w") as f:
                 json.dump(det, f, ensure_ascii=False, separators=(",", ":"))
+            if b.get("layout") == "archives":
+                with open(cfile, "w") as f:
+                    json.dump(cache, f, ensure_ascii=False, separators=(",", ":"))
             new += 1
         bundles.append(b)
         trials.extend(ts)
     for f in os.listdir(bdir):   # a bundle no longer in the dataset (deleted, or its pull request closed)
-        if f.endswith(".json") and f[:-5] not in seen:
+        k = f[:-len(".archives.json")] if f.endswith(".archives.json") else f[:-len(".json")]
+        if f.endswith(".json") and k not in seen:
             os.remove(os.path.join(bdir, f))
 
     bundles.sort(key=lambda b: b.get("uploaded_at") or "", reverse=True)

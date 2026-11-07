@@ -14,6 +14,8 @@
   {"id": "claude-code-glm-5-3-flash", "harness": "Claude Code", "model": "GLM 5.3 Flash",
    "match": {"harness": "claude[-_]?code", "model": "glm[-_.]?5[-_.]?3[-_.]?flash"}},
   {"id": "claude-code-qwen-3-8-max", "harness": "Claude Code", "model": "Qwen 3.8 Max", "via": "OpenRouter", "tentative": true,
-   "match": {"harness": "claude[-_]?code", "model": "qwen[-_.]?3[-_.]?8[-_.]?max"}}
+   "match": {"harness": "claude[-_]?code", "model": "qwen[-_.]?3[-_.]?8[-_.]?max"}},
+  {"id": "kimi-code-kimi-k3-1-pro", "harness": "Kimi Code", "model": "Kimi K3.1 Pro", "tentative": true,
+   "match": {"harness": "kimi[-_]?code", "model": "kimi[-_.]?k?3[-_.]?1[-_.]?pro"}}
  ]
 }

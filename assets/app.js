@@ -407,7 +407,7 @@ function renderHosts() {
           <dt>Parallelism</dt><dd>${log.lanes ? `${log.lanes} runner(s), concurrency ${log.concurrency_max ?? "–"} per Harbor job` : (b.pending ? "awaiting digest" : "–")}</dd>
           <dt>Trials per task</dt><dd>${m.K ? `K = ${m.K}` : "–"}</dd>
           <dt>${b.batches?.length > 1 ? `These ${b.batches.length} batches` : "This batch"}</dt><dd>${m.trials ? `${esc(m.trials.planned_jobs)} jobs planned, ${esc(m.trials.trial_dirs)} trial dirs, ${esc(m.trials.with_verdict)} with a verdict` : "–"}</dd>
-          <dt>Code</dt><dd class="mono">${esc(raw.repo || (b.layout === "loose" ? "– (loose files: no MANIFEST.md)" : b.layout === "harbor" ? "– (Harbor's own output: no MANIFEST.md)" : "–"))}</dd>
+          <dt>Code</dt><dd class="mono">${esc(raw.repo || (b.layout === "loose" ? "– (loose files: no MANIFEST.md)" : b.layout === "harbor" ? "– (Harbor's own output: no MANIFEST.md)" : b.layout === "archives" ? "– (job archives alone: no MANIFEST.md)" : "–"))}</dd>
           <dt>Images</dt><dd class="mono small">${esc(raw.images || "–").replace(/\n/g, "<br>")}</dd>
         </dl>
       </div>
@@ -542,6 +542,7 @@ function renderHardware() {
 function deliveryTags(b) {
   return (b.layout === "loose" ? ` <span class="tag" title="the runner's jobs/ and results/ folders as loose files, without send_results.sh: no MANIFEST.md, so the code commit, the images and the machine are unknown">loose files</span>` : "")
     + (b.layout === "harbor" ? ` <span class="tag" title="Harbor's own job folders (harbor run), without RoboARC's runner and send_results.sh: no MANIFEST.md, batch plan, seeds or official results; the code commit, the images and the machine are unknown">Harbor job</span>` : "")
+    + (b.layout === "archives" ? ` <span class="tag" title="job archives alone, uploaded as each job finishes, without send_results.sh's MANIFEST.md, index.json and batch.tar.gz: the code commit, the images and the batch log are unknown; each trial's result is judged from its own records as the runner judges them">job archives</span>` : "")
     + (b.official === false ? ` <span class="tag warn" title="${esc(b.unofficial_reason || b.redaction?.notice || "REDACTION.json: \"official\": false")}">unofficial: not counted</span>` : "");
 }
 
@@ -764,6 +765,8 @@ async function openBundle(key) {
     html += `<div><h4>Loose files</h4><p class="small">The runner's <code>jobs/</code> and <code>results/</code> folders as loose files, without <code>scripts/send_results.sh</code>: no MANIFEST.md, so the code commit, the images and the machine are unknown. The run settings are the batch log's runner line: <code>${esc(raw.runner || "–")}</code>. Batches: ${(b.batches || []).map((x) => `<code>${esc(x)}</code>`).join(", ") || "none found"}.</p></div>`;
     const red = d?.redaction || b.redaction;
     if (red) html += `<div><h4>REDACTION.json${b.official === false ? ": unofficial, not counted in the progress" : ""}</h4>${jsonPre(red)}</div>`;
+  } else if (b.layout === "archives") {
+    html += `<div><h4>Job archives</h4><p class="small">The helper's own uploads of each job as it finishes (${esc(b.archives ?? b.trials)} archives, <code>jobs/&lt;job&gt;.tar.gz</code> or one per trial directory), each packed as <code>scripts/send_results.sh</code> packs a job, without its MANIFEST.md, index.json and batch.tar.gz: the code commit, the images and the batch log are unknown. The run settings are the jobs' <code>config.json</code>, <code>usage_recording.json</code> and <code>placement.json</code>, the trial numbers and seeds the jobs' <code>seed.json</code>, and each trial's result is judged from its own records as the runner's <code>write_task_results.py</code> judges them (without its model-account check). The delivery grows while the batch runs and is digested again when it changes.</p></div>`;
   } else if (b.layout === "harbor") {
     html += `<div><h4>Harbor job</h4><p class="small">Harbor's own output as <code>harbor run</code> wrote it, without RoboARC's runner and <code>scripts/send_results.sh</code>: no MANIFEST.md, so the code commit, the images and the machine are unknown, and no batch plan, no seeds drawn by the runner and no official results, so it is unofficial and not counted in the progress. The run settings are the jobs' <code>config.json</code>; the agent's options other than its version, reasoning effort, web search and turn and budget limits are named without their value (<code>other_options</code>), since one may carry a credential:</p>${jsonPre(b.harbor_jobs || [])}</div>`;
   } else if (d?.manifest_text) html += `<div><h4>MANIFEST.md</h4>${pre(d.manifest_text)}</div>`;

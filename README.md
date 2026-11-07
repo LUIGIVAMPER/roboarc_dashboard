@@ -68,6 +68,17 @@ runner would give those settings. It has no batch plan, no seeds drawn by the ru
 always unofficial (tagged "Harbor job"); its trials have no trial number or seed, and their timelines read the trial
 folders file by file.
 
+A delivery of job archives alone is read too: a helper's own uploads of each job as it finishes, `jobs/<job>.tar.gz` or
+`jobs/<job>__<trial dir>.tar.gz` (one archive per trial directory), each packed as `send_results.sh` packs a job, with no
+`MANIFEST.md`, `index.json` or `batch.tar.gz`, maybe with a `README.md` (shown as the helper's notes). Its run settings
+are the jobs' `config.json` (the harness by its own name in the trials' `result.json`, the model, the effort),
+`usage_recording.json` (the gateway's token budget and image cap) and `placement.json`; its trial numbers and seeds the
+jobs' `seed.json`; each trial's result is judged from its own records as the runner's `write_task_results.py` judges
+them (a success with no infrastructure flag, over the token budget a fail, no `reward.json` or a Harbor exception other
+than `AgentTimeoutError` not a result), without the runner's model-account check (tagged "job archives"). The delivery
+grows while its batch runs, so the digest reads it again whenever its folder's last commit changes, and only the
+archives it has not read: the others' records are kept in `data/bundles/<key>.archives.json`.
+
 ## Set up
 
 1. Create a GitHub repository and push this directory to its `main` branch.
@@ -85,7 +96,7 @@ folders file by file.
 | `data/helpers.json` | by hand | the name printed for each helper in the daily progress text |
 | `data/unofficial.json` | by hand | a delivery to keep out of the progress that its helper did not mark unofficial: `bundles[<helper>__<batch>__<bundle id>]` = the reason shown on the page |
 | `data/frames.json`, `frames/` | by hand (renders) | first frames: `frames[<base>][<seed>] = "frames/<base>/seed<k>.jpg"` |
-| `data/digest.json`, `data/bundles/` | `tools/digest.py` (the workflow) | never by hand |
+| `data/digest.json`, `data/bundles/` | `tools/digest.py` (the workflow); `<key>.archives.json` is its record of the archives it has read of a delivery of job archives alone | never by hand |
 
 ## Local preview
 

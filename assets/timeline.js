@@ -215,7 +215,9 @@ const T = {
   turns: [], robot: [], events: [], t0: null, traj: null, rows: [], hidden: new Set(), query: "",
   video: null, motions: [], motionsOf: null, nowRow: null,
   loose: false, files: null, dir: null,   // a delivery of loose files: the trial folder and its files, {path in it: size}
+  archive: null,   // the trial's job archive when it is not jobs/<job>.tar.gz (job archives alone: one per trial directory)
 };
+const archivePath = () => T.archive || `${T.path}/jobs/${T.job}.tar.gz`;
 const ROBOT_SRC = { service: "robot service", tooling: "sim tooling, self-reported" };
 
 function fmtRel(sec) {
@@ -291,7 +293,7 @@ function renderSummary(b, t, detail, others) {
   const tokIn = t.tokens_in ?? T.traj?.final_metrics?.total_prompt_tokens, tokOut = t.tokens_out ?? T.traj?.final_metrics?.total_completion_tokens;
   const cached = T.traj?.final_metrics?.total_cached_tokens;
   const kv = [
-    ["Result", `<span class="pill ${st}">${STATUS_LABEL[st]}</span>${t.result_source === "index" ? ` <span class="small muted">(${b.pending ? (filesLoose(b) ? "the delivery is not digested yet" : "from index.json: the delivery is not digested yet") : filesLoose(b) ? "from verifier/reward.json" : "from index.json only"})</span>` : ""}`],
+    ["Result", `<span class="pill ${st}">${STATUS_LABEL[st]}</span>${t.result_source === "index" ? ` <span class="small muted">(${b.pending ? (filesLoose(b) ? "the delivery is not digested yet" : "from index.json: the delivery is not digested yet") : filesLoose(b) ? "from verifier/reward.json" : "from index.json only"})</span>` : t.result_source === "records" ? ` <span class="small muted">(judged from the trial's own records as the runner's write_task_results.py judges them: this delivery has no runner results)</span>` : ""}`],
     ["Reward", esc(t.reward ?? "–")], ["Reason", esc(t.reason || "–")],
     ["Harbor exception", esc(t.exception_type || (t.exception ? "yes (awaiting digest)" : "none"))],
     ["Reasoning effort", t.effort_source ? `${t.effort ? esc(t.effort) : "not set: the harness's or the provider's default level, which no record names"} <span class="small muted">(from the ${esc(t.effort_source)})</span>` : "–"],
@@ -305,7 +307,7 @@ function renderSummary(b, t, detail, others) {
   ];
   const files = T.loose
     ? `<a class="btn" href="${esc(hfBlobIn(T.dataset, T.rev, trialDir()))}" target="_blank" rel="noopener">Open the trial's files on Hugging Face</a>`
-    : `<a class="btn" href="${esc(hfResolveIn(T.dataset, T.rev, `${T.path}/jobs/${T.job}.tar.gz`))}" target="_blank" rel="noopener">Download the job archive</a>`;
+    : `<a class="btn" href="${esc(hfResolveIn(T.dataset, T.rev, archivePath()))}" target="_blank" rel="noopener">Download the job archive</a>`;
   let html = `<div class="panel tl-summary"><dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
     <div class="chips">${files}<a class="btn" href="${esc(hfBlobIn(T.dataset, T.rev, T.path))}" target="_blank" rel="noopener">Open the delivery on Hugging Face</a>${b.official === false ? ` <span class="tag warn" title="${esc(b.unofficial_reason || "the helper's REDACTION.json: \"official\": false")}">unofficial delivery: not counted in the progress</span>` : ""}</div></div>`;
   if (detail) {
@@ -588,7 +590,7 @@ async function videoFromArchive() {
   let inside = false, raf = 0, shown = [0, null];
   vnote(`<span class="dot live"></span>Downloading the job archive…`);
   try {
-    await untarGz(hfResolveIn(T.dataset, T.rev, `${T.path}/jobs/${T.job}.tar.gz`), {
+    await untarGz(hfResolveIn(T.dataset, T.rev, archivePath()), {
       want: (name, size) => {
         const r = relOf(name), d = dirOf(r);
         return !!d && r.slice(d.length) in VIDEO_FILES && !(d !== VIDEO_DIRS[0] && got[VIDEO_DIRS[0]]?.mp4) && size <= (1 << 30);
@@ -696,7 +698,7 @@ async function videoIntro() {
   const base = "The replay video of this trial, rendered while it was replayed for grading, is further into the job archive. A gzip archive cannot be read from the middle, so loading it downloads the archive up to the video: in standard mode nearly all of it.";
   vnote(base);
   const list = await getJSON(`${HF}/api/datasets/${T.dataset}/tree/${encRev(T.rev)}/${encPath(`${T.path}/jobs`)}`).catch(() => null);
-  const f = Array.isArray(list) ? list.find((x) => x.path === `${T.path}/jobs/${T.job}.tar.gz`) : null;
+  const f = Array.isArray(list) ? list.find((x) => x.path === archivePath()) : null;
   if (f?.size && !$("#vid-load").disabled) vnote(`${base} The archive is ${mb(f.size)}.`);
 }
 
@@ -752,7 +754,7 @@ async function loadTimeline() {
   const marker = `/${T.job}/${T.trial}/`;
   const relOf = (name) => { const i = name.indexOf(marker); return i < 0 ? null : name.slice(i + marker.length); };
   let inside = false, gotTraj = false, gotSession = false;
-  const url = hfResolveIn(T.dataset, T.rev, `${T.path}/jobs/${T.job}.tar.gz`);
+  const url = hfResolveIn(T.dataset, T.rev, archivePath());
   const dec = new TextDecoder();
   const opts = {
     want: (name, size) => { const r = relOf(name); return r in WANT && size <= (256 << 20); },
@@ -804,6 +806,7 @@ async function start() {
   wire();
   const rec = await loadTrialRecord().catch((e) => { status(`<span><span class="dot err"></span>Could not read the delivery: ${esc(e.message)}</span>`); return null; });
   T.loose = filesLoose(rec?.b);
+  if (rec?.t?.archive?.endsWith(".tar.gz")) T.archive = rec.t.archive;
   if (T.loose) {   // the trial's folder: the record's (a Harbor job folder may be the delivery itself), else jobs/<job>/<trial>
     if (rec.t?.archive?.endsWith("/")) T.dir = rec.t.archive.slice(0, -1);
     T.files = await listFiles(T.dataset, T.rev, trialDir()).catch(() => ({}));

@@ -139,12 +139,14 @@ export async function listFiles(dataset, rev, path) {
 export const filesLoose = (b) => b?.layout === "loose" || b?.layout === "harbor";
 
 // The run settings (the batch logs' runner line and the plans), one trial per trial directory (awaiting digest) and
-// what REDACTION.json says, as tools/digest.py reads them; for Harbor's own job folders, readHarbor; null when <path> is
-// neither.
+// what REDACTION.json says, as tools/digest.py reads them; for Harbor's own job folders, readHarbor; for job archives
+// alone, readArchives; null when <path> is none of them.
 export async function readLoose(dataset, rev, path, key) {
   const files = await listFiles(dataset, rev, path);
   const names = Object.keys(files);
   if ("batch.tar.gz" in files) return null;
+  const jobFiles = names.filter((n) => n.startsWith("jobs/"));
+  if (jobFiles.length && jobFiles.every((n) => /^jobs\/[^/]+\.tar\.gz(\.sha256)?$/.test(n))) return readArchives(dataset, rev, path, key, files);
   if (!names.some((n) => n.startsWith("jobs/"))) {
     const dirs = harborJobDirs(files);
     return Object.keys(dirs).length ? readHarbor(dataset, rev, path, key, files, dirs) : null;
@@ -190,6 +192,27 @@ export async function readLoose(dataset, rev, path, key) {
   const redaction = red && typeof red === "object"
     ? Object.fromEntries(["notice", "sanitized_copy", "official", "provider_alias"].filter((k) => k in red).map((k) => [k, red[k]])) : null;
   return { layout: "loose", man, runId, trials, batches, official: red?.official ?? null, redaction, hardware: man.parsed.host || man.parsed.gpus.length ? "batch log" : null };
+}
+
+// ---------- a delivery of job archives alone (a helper's own uploads of each job as it finishes) ----------
+
+// One trial per archive (jobs/<job>.tar.gz, or jobs/<job>__<trial dir>.tar.gz), awaiting digest: the task, mode and trial
+// number from the runner's job name (<batch>-<mode>-<base>-t<k>), the notes from README.md. The run settings, the seeds
+// and the results are inside the archives, which the digest reads (tools/digest.py gather_archives).
+async function readArchives(dataset, rev, path, key, files) {
+  const MODE = /-(privileged|standard-realtime|standard)-(.+?)(?:-t(\d+))?$/;
+  const batch = path.split("/")[1];
+  const trials = Object.keys(files).filter((n) => /^jobs\/[^/]+\.tar\.gz$/.test(n)).sort().map((n) => {
+    const [job, trialDir] = n.slice("jobs/".length, -".tar.gz".length).split(/__(.*)/s);
+    const m = (job.startsWith(`${batch}-`) ? job.slice(batch.length) : job).match(MODE) || [];
+    return { bundle: key, job, trial_dir: trialDir || null, base: m[2] || null, mode: m[1] || null, k: m[3] ? +m[3] : null,
+      seed: null, run_id: null, reward: null, exception: false, result: "pending", result_source: "index",
+      archive: `${path}/${n}`, live: true };
+  });
+  const notes = "README.md" in files ? await getText(hfResolveIn(dataset, rev, `${path}/README.md`)).catch(() => null) : null;
+  const parsed = { gpus: [], trials: { planned_jobs: "?", trial_dirs: trials.length, with_verdict: "?" } };
+  return { layout: "archives", man: { parsed, raw: notes ? { notes: notes.trim().slice(0, 2000) } : {} }, runId: null, trials,
+    batches: [], official: null, redaction: null, hardware: null };
 }
 
 // ---------- a delivery of Harbor's own output (harbor run, without RoboARC's runner) ----------
