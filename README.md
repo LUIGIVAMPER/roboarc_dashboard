@@ -34,6 +34,8 @@ reruns with their logs, a per-task matrix and the first frames.
   before its call, from the robot service's checkpoints, times the replay's simulated time per step, looked up in the
   frame map), and the line under the video names the call on screen. The replay's forcing and review events are listed
   as jump points. In privileged mode the agent built the trajectory offline, so the rows have no moment in the video.
+  IKEA's standard mode has no replay: its video is the live episode's own recording, `live.mp4`, with no frame map,
+  played when there is no `replay.mp4`.
 - Hardware: each delivery's machine comes from the best record it has: the batch log's `host:`, `GPUs:` and
   `software:` lines (RoboARC runners since 2026-10-28 log them when a lane starts: the machine that ran the batch),
   else the jobs' `host.json` (the same record), else `MANIFEST.md` (the machine that sent the delivery), else only what

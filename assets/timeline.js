@@ -452,9 +452,11 @@ function jumpTo(t) {
 // The video is further into the same job archive: standard mode's artifacts/data/replay.mp4 (the sim service's replay of
 // the live episode in a fresh process), else verifier/replay.mp4 (privileged mode: the verifier's replay of the submitted
 // trajectory). Next to it: its frame map (one line per video frame: the video time and the simulated time it shows) and
-// its recording manifest (the replay's step counts, its forcing and review events).
+// its recording manifest (the replay's step counts, its forcing and review events). IKEA's standard mode has no replay:
+// its video is the live episode's own recording, live.mp4, with no frame map, taken when there is no replay.mp4.
 const VIDEO_DIRS = ["artifacts/data/", "verifier/"];
-const VIDEO_FILES = { "replay.frame_map.jsonl": "map", "replay.mp4": "mp4", "replay.recording_manifest.json": "manifest" };
+const VIDEO_FILES = { "live.mp4": "live", "replay.frame_map.jsonl": "map", "replay.mp4": "mp4", "replay.recording_manifest.json": "manifest" };
+const hasVideo = (g) => !!(g?.mp4 || g?.live);
 
 const mb = (n) => `${(n / 1048576).toFixed(0)} MB`;
 const pad2 = (x) => String(x).padStart(2, "0");
@@ -593,18 +595,18 @@ async function videoFromArchive() {
     await untarGz(hfResolveIn(T.dataset, T.rev, archivePath()), {
       want: (name, size) => {
         const r = relOf(name), d = dirOf(r);
-        return !!d && r.slice(d.length) in VIDEO_FILES && !(d !== VIDEO_DIRS[0] && got[VIDEO_DIRS[0]]?.mp4) && size <= (1 << 30);
+        return !!d && r.slice(d.length) in VIDEO_FILES && !(d !== VIDEO_DIRS[0] && hasVideo(got[VIDEO_DIRS[0]])) && size <= (1 << 30);
       },
       stop: (name) => {
         const r = relOf(name);
         if (r == null) return inside;                       // past this trial's directory
         inside = true;
-        return VIDEO_DIRS.some((d) => got[d]?.mp4 && r > `${d}replay.recording_manifest.json`);   // sorted by name
+        return VIDEO_DIRS.some((d) => hasVideo(got[d]) && r > `${d}replay.recording_manifest.json`);   // sorted by name
       },
       onFile: (name, bytes) => {
         const r = relOf(name), d = dirOf(r), kind = VIDEO_FILES[r.slice(d.length)], g = (got[d] ||= {});
         if (kind === "map") g.frames = frameTimes(bytes);
-        else if (kind === "mp4") g.mp4 = new Blob([bytes], { type: "video/mp4" });
+        else if (kind === "mp4" || kind === "live") g[kind] = new Blob([bytes], { type: "video/mp4" });
         else { try { g.manifest = JSON.parse(new TextDecoder().decode(bytes)); } catch { g.manifest = null; } }
       },
       onDownload: (n, total) => {
@@ -626,13 +628,15 @@ async function videoFromArchive() {
     cancelAnimationFrame(raf);
     bar.hidden = true;
   }
-  const dir = VIDEO_DIRS.find((d) => got[d]?.mp4) || null;
+  const dir = VIDEO_DIRS.find((d) => hasVideo(got[d])) || null;
+  if (dir) Object.assign(got[dir], { name: got[dir].mp4 ? "replay.mp4" : "live.mp4", mp4: got[dir].mp4 || got[dir].live });
   return { dir, g: got[dir] };
 }
 
 // A loose delivery: the video streams from the dataset (src), its frame map and recording manifest are read beside it.
 async function videoFromFiles() {
-  const dir = VIDEO_DIRS.find((d) => `${d}replay.mp4` in T.files) || null;
+  const name = ["replay.mp4", "live.mp4"].find((n) => VIDEO_DIRS.some((d) => `${d}${n}` in T.files));
+  const dir = name ? VIDEO_DIRS.find((d) => `${d}${name}` in T.files) : null;
   if (!dir) return { dir };
   vnote(`<span class="dot live"></span>Reading the video's frame map…`);
   const get = (f) => (`${dir}${f}` in T.files
@@ -640,7 +644,7 @@ async function videoFromFiles() {
   const [map, man] = await Promise.all([get("replay.frame_map.jsonl"), get("replay.recording_manifest.json")]);
   let manifest = null;
   try { manifest = man ? JSON.parse(new TextDecoder().decode(man)) : null; } catch { manifest = null; }
-  return { dir, g: { src: hfResolveIn(T.dataset, T.rev, `${trialDir()}/${dir}replay.mp4`), size: T.files[`${dir}replay.mp4`],
+  return { dir, g: { name, src: hfResolveIn(T.dataset, T.rev, `${trialDir()}/${dir}${name}`), size: T.files[`${dir}${name}`],
     frames: map ? frameTimes(new Uint8Array(map)) : null, manifest } };
 }
 
@@ -656,14 +660,15 @@ async function loadVideo() {
   }
   const m = g.manifest || {}, r = m.result || {};
   T.video = {
-    dir, url: g.src || URL.createObjectURL(g.mp4), size: g.size ?? g.mp4.size, frames: g.frames || null, manifest: g.manifest || null,
+    dir, name: g.name || "replay.mp4", url: g.src || URL.createObjectURL(g.mp4), size: g.size ?? g.mp4.size, frames: g.frames || null, manifest: g.manifest || null,
     dtSim: r.sim_steps > 0 && r.sim_time_s > 0 ? r.sim_time_s / r.sim_steps : null,
     dtPhys: r.physics_steps > 0 && r.sim_time_s > 0 ? r.sim_time_s / r.physics_steps : null,
   };
   const service = dir === VIDEO_DIRS[0] || T.robot.some((e) => e.src === "service");
   T.video.noteHtml = [
-    `<code>${esc(dir)}replay.mp4</code>, ${mb(T.video.size)}${m.frame_count ? `, ${fmtInt(m.frame_count)} frames at ${esc(m.fps)} fps` : ""}${r.sim_time_s ? `, ${(+r.sim_time_s).toFixed(1)} s simulated` : ""}${r.success != null ? `, replay success ${esc(r.success)}` : ""}.`,
-    dir === VIDEO_DIRS[0] ? "The sim service's replay of the live episode in a fresh process." : "The verifier's replay of the trajectory the agent submitted.",
+    `<code>${esc(dir)}${esc(T.video.name)}</code>${T.video.name === "live.mp4" ? " (the live episode's own recording: no replay, so no frame map)" : ""}, ${mb(T.video.size)}${m.frame_count ? `, ${fmtInt(m.frame_count)} frames at ${esc(m.fps)} fps` : ""}${r.sim_time_s ? `, ${(+r.sim_time_s).toFixed(1)} s simulated` : ""}${r.success != null ? `, replay success ${esc(r.success)}` : ""}.`,
+    T.video.name === "live.mp4" ? "The live episode's own recording (IKEA's standard mode has no replay)."
+      : dir === VIDEO_DIRS[0] ? "The sim service's replay of the live episode in a fresh process." : "The verifier's replay of the trajectory the agent submitted.",
     !T.video.dtSim ? "Its recording manifest is missing, so the timeline's rows have no place in it."
       : service ? "Click a robot row of the timeline to jump the video to the start of its motion."
       : "In privileged mode the agent built this trajectory offline and submitted it at the end, so the timeline's rows have no moment in the video.",
@@ -673,7 +678,7 @@ async function loadVideo() {
   btn.hidden = true;
   const save = $("#vid-save");
   save.href = g.src ? `${g.src}?download=true` : T.video.url;   // a link to another site ignores download=
-  save.download = `${T.trial}-replay.mp4`;
+  save.download = `${T.trial}-${T.video.name}`;
   save.hidden = false;
   $("#vid-marks").innerHTML = markHtml();
   $("#vid-marks").hidden = !$("#vid-marks").innerHTML;
@@ -690,8 +695,9 @@ async function loadVideo() {
 // Before loading: what loading the video costs (the archive's size, from the Hugging Face API).
 async function videoIntro() {
   if (T.loose) {
-    const d = VIDEO_DIRS.find((x) => `${x}replay.mp4` in (T.files || {}));
-    vnote(d ? `The replay video of this trial, rendered while it was replayed for grading, is <code>${esc(d)}replay.mp4</code> (${mb(T.files[`${d}replay.mp4`])}). This delivery has its files loose, so it plays straight from the dataset.`
+    const n = ["replay.mp4", "live.mp4"].find((x) => VIDEO_DIRS.some((v) => `${v}${x}` in (T.files || {})));
+    const d = n && VIDEO_DIRS.find((x) => `${x}${n}` in T.files);
+    vnote(d ? `The ${n === "live.mp4" ? "live episode's recording" : "replay video"} of this trial is <code>${esc(d)}${n}</code> (${mb(T.files[`${d}${n}`])}). This delivery has its files loose, so it plays straight from the dataset.`
       : "This trial has no replay video in the delivery.");
     return;
   }
