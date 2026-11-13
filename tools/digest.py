@@ -601,6 +601,36 @@ def archives_only(listing):
     return bool(js) and all(ARCHIVE.fullmatch(n) or re.fullmatch(r"jobs/[^/]+\.tar\.gz\.sha256", n) for n in js)
 
 
+# Harbor's exceptions that are the agent's own end, a result (RoboARC scripts/harbor/write_task_results.py AGENT_ENDS,
+# RUNNING.md "Infrastructure failures"): the cutoff; a model response over the harness's output-token maximum or a
+# request over the model's context window
+AGENT_ENDS = ("AgentTimeoutError", "OutputTokenExceededError", "ContextWindowExceededError")
+
+
+def own_memory_end(ex, rw):
+    """The kernel killed the agent at its own container's memory cap, in the limits' scope, and that stopped it
+    (write_task_results.py own_memory_end()): no host OOM kill, no emergency kill."""
+    def n(key):
+        try:
+            return float(rw.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    return (ex == "NonZeroAgentExitCodeError" and n("resource_oom_kills") > 0
+            and not n("resource_host_oom_kills") and not n("resource_emergency_kills"))
+
+
+def agent_end(ex, rw, gw):
+    """Whether the Harbor exception ex is the agent's own end: the cutoff, or (when the gateway's last model calls did
+    not fail: write_task_results.py checks those next) the output-token maximum, the context window, its memory cap."""
+    if ex == "AgentTimeoutError":
+        return True
+    try:
+        failed = int(gw.get("failures_in_a_row") or 0)
+    except (TypeError, ValueError):
+        failed = 0
+    return (ex in AGENT_ENDS or own_memory_end(ex, rw)) and not failed
+
+
 def judge(rec):
     """A trial's result from its own records, as the runner's write_task_results.py classify() judges it (PROTOCOL §2.6,
     §5), without its model-account check: (result, the reason it is not a result)."""
@@ -617,9 +647,61 @@ def judge(rec):
         return "fail", None
     if not rw:
         return "not_a_result", "the verifier wrote no reward.json" + (f"; Harbor: `{ex}`" if ex else "")
-    if ex and ex != "AgentTimeoutError":
+    if ex and not agent_end(ex, rw, gw):
         return "not_a_result", f"Harbor ended the trial with `{ex}`"
     return "fail", None
+
+
+REJUDGED = ("the agent's own end ({}): a result (RoboARC's rule of 2026-11-12, RUNNING.md \"Infrastructure failures\"); "
+            "the runner had voided it")
+AFTER_RESULT = ("run again after the trial's first result (the agent's own end, a result by RoboARC's rule of "
+                "2026-11-12): not counted, a result is never run again (PROTOCOL H.5)")
+
+
+def rejudge(trials, bdir):
+    """Trials a runner voided, or voided and ran again (`superseded`), for a Harbor exception that RoboARC's rule of
+    2026-11-12 counts as the agent's own end (agent_end(): the output-token maximum, the context window, a kill at its
+    own memory cap): a result, judged from the trial's own records (judge()), result_source "rejudged". Runs over every
+    trial, old and new, so a bundle need not be digested again; a trial the runner voided for any other reason (no
+    reward.json, infra_error, a model-account failure, the gateway) is left as it is. Returns how many changed."""
+    details, changed = {}, 0
+    for t in trials:
+        ex = t.get("exception_type") or ""
+        if t.get("result") != "not_a_result" or not ex or ex == "AgentTimeoutError":
+            continue
+        src = t.get("result_source")
+        if not (src == "superseded" or (src == "results" and t.get("reason") == f"Harbor ended the trial with `{ex}`")):
+            continue
+        if t["bundle"] not in details:
+            f = os.path.join(bdir, f"{t['bundle']}.json")
+            details[t["bundle"]] = ((load_json(open(f, "rb").read()) or {}).get("trials") or {}) if os.path.isfile(f) else {}
+        det = details[t["bundle"]].get(f"{t['job']}/{t['trial_dir']}") or {}
+        if not agent_end(ex, det.get("reward") or {}, det.get("gateway_totals") or {}):
+            continue
+        result, _ = judge({"exception_type": ex, "detail": det})
+        if result == "not_a_result":
+            continue
+        t.update(result=result, result_source="rejudged", counted=True,
+                 reason=REJUDGED.format("Harbor: `" + ex + "`" + (", killed at its own memory cap" if ex == "NonZeroAgentExitCodeError" else "")))
+        changed += 1
+    # A result is never run again (PROTOCOL H.5): when a trial's first result is one judged here, a later run of the same
+    # trial (helper, run id, task, mode, seed, trial number; another trial directory) is not counted, so the page, which
+    # shows a trial's last result, shows the first one
+    group = {}
+    for t in trials:
+        if t.get("seed") is None or t.get("k") is None:
+            continue
+        group.setdefault((t["bundle"].split("__")[0], t.get("run_id"), t.get("base"), t.get("mode"), t["seed"], t["k"]), []).append(t)
+    for ts in group.values():
+        res = sorted((t for t in ts if t.get("result") in ("success", "fail")), key=lambda t: t.get("finished_at") or "")
+        if not res or res[0].get("result_source") != "rejudged":
+            continue
+        first = res[0]
+        for t in res[1:]:
+            if (t["job"], t["trial_dir"]) != (first["job"], first["trial_dir"]) and (t.get("finished_at") or "") > (first.get("finished_at") or ""):
+                t.update(result="not_a_result", result_source="after_result", counted=False, reason=AFTER_RESULT)
+                changed += 1
+    return changed
 
 
 def gather_archives(src, rev, path, listing, cache, old_detail):
@@ -878,7 +960,10 @@ def main():
             os.remove(os.path.join(bdir, f))
 
     bundles.sort(key=lambda b: b.get("uploaded_at") or "", reverse=True)
-    if not new and os.path.isfile(args.out) and set(old) == seen:
+    rejudged = rejudge(trials, bdir)
+    if rejudged:
+        print(f"rejudged {rejudged} trial(s) a runner voided: the agent's own end, a result (rejudge())", flush=True)
+    if not new and not rejudged and os.path.isfile(args.out) and set(old) == seen:
         print(f"no change: {len(bundles)} bundles, {len(trials)} trials ({os.path.normpath(args.out)} kept)")
         return
     out = {"generated_at": now(), "dataset": src.dataset, "bundles": bundles, "trials": trials}
