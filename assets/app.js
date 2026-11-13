@@ -99,7 +99,7 @@ async function refreshLive() {
   render();
 }
 
-// ---------- the model: every trial assigned to a pair and a slot (pair, base, mode, trial number) ----------
+// ---------- the model: every trial assigned to a pair and a slot (pair, base, mode, seed) ----------
 
 function pairOf(bundle, trial) {
   const r = bundle?.manifest?.runner;
@@ -137,7 +137,12 @@ function buildModel() {
   const baseSet = new Set(S.tasks.tasks.map((x) => x.base));
   const K = S.tasks.trials_per_task_mode;
 
-  // slot -> attempts (time order); a trial without a trial number takes the first free number of its task and mode
+  // slot -> attempts (time order). A task and mode has K trials, one per seed of the task (tasks.json `seeds`), so slot i
+  // is the task's i-th seed: a batch run later for some seeds numbers its trials afresh, and its trial numbers repeat an
+  // earlier batch's for other seeds. A trial without a seed of its task keeps its trial number, or takes the first free
+  // slot of its task and mode.
+  const seedsOf = Object.fromEntries(S.tasks.tasks.map((x) => [x.base, x.seeds || []]));
+  const slotOf = (t) => { const i = (seedsOf[t.base] || []).indexOf(t.seed); return i >= 0 && i < K ? i + 1 : null; };
   const slots = {};
   const byTM = {};
   for (const t of counted.sort((a, b) => String(a.when).localeCompare(String(b.when)))) {
@@ -146,10 +151,10 @@ function buildModel() {
     (byTM[tm] ||= []).push(t);
   }
   for (const [tm, ts] of Object.entries(byTM)) {
-    const used = new Set(ts.filter((t) => t.k).map((t) => t.k));
+    const used = new Set(ts.map((t) => slotOf(t) ?? t.k).filter(Boolean));
     let next = 1;
     for (const t of ts) {
-      let k = t.k;
+      let k = slotOf(t) ?? t.k;
       if (!k) { while (used.has(next)) next++; k = next; used.add(k); }
       (slots[`${tm}|${k}`] ||= []).push(t);
     }
@@ -656,8 +661,8 @@ function renderMatrix() {
             const e = S.model.eff[key];
             const st = e ? e.final.status : "empty";
             if (st !== "ok" && st !== "fail") complete = false;
-            const seed = e?.final.seed ?? "?";
-            const tip = `${task.base} · ${c.harness} + ${c.model}\n${m} trial ${i + 1} (seed ${seed}): ${STATUS_LABEL[st]}${e && e.attempts.length > 1 ? `, ${e.attempts.length} attempts` : ""}${e?.final.wall_s != null ? `\nwall time ${fmtDur(e.final.wall_s)}` : ""}${e?.final.reason ? `\n${e.final.reason}` : ""}`;
+            const seed = task.seeds?.[i] ?? e?.final.seed ?? "?";
+            const tip = `${task.base} · ${c.harness} + ${c.model}\n${m} seed ${seed} (trial ${e?.final.k ?? "?"}): ${STATUS_LABEL[st]}${e && e.attempts.length > 1 ? `, ${e.attempts.length} attempts` : ""}${e?.final.wall_s != null ? `\nwall time ${fmtDur(e.final.wall_s)}` : ""}${e?.final.reason ? `\n${e.final.reason}` : ""}`;
             return `<span class="cell ${st === "empty" ? "" : st}" title="${esc(tip)}"${e ? ` data-trial="${esc(e.final.bundle)}|${esc(e.final.job)}|${esc(e.final.trial_dir)}"` : ""}></span>`;
           }).join("")).join("");
           return `<div class="mcell">${sq}</div>`;

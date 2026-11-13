@@ -242,7 +242,7 @@ async function loadTrialRecord() {
   let detail = null, others = [];
   if (b && t) {
     detail = (await getJSON(`${b.detail_file}?v=${minuteStamp()}`, { optional: true }).catch(() => null))?.trials?.[`${T.job}/${T.trial}`] || null;
-    others = digest.trials.filter((x) => x !== t && x.run_id === t.run_id && x.base === t.base && x.mode === t.mode && x.k === t.k)
+    others = digest.trials.filter((x) => x !== t && x.run_id === t.run_id && x.base === t.base && x.mode === t.mode && (x.seed != null && t.seed != null ? x.seed === t.seed : x.k === t.k))
       .map((x) => { const ob = digest.bundles.find((y) => y.key === x.bundle) || {}; return { ...x, rev: ob.revision || "main", path: ob.path }; })
       .filter((x) => x.path);
   } else {
