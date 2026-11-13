@@ -655,16 +655,34 @@ def judge(rec):
 REJUDGED = ("the agent's own end ({}): a result (RoboARC's rule of 2026-11-12, RUNNING.md \"Infrastructure failures\"); "
             "the runner had voided it")
 AFTER_RESULT = ("run again after the trial's first result (the agent's own end, a result by RoboARC's rule of "
-                "2026-11-12): not counted, a result is never run again (PROTOCOL H.5)")
+                "2026-11-12 or by the owners' ruling in data/rulings.json): not counted, a result is never run again "
+                "(PROTOCOL H.5)")
+RULED = "the benchmark owners' ruling of {} (data/rulings.json): {}"
 
 
-def rejudge(trials, bdir):
+def load_rulings(path=os.path.join(DATA, "rulings.json")):
+    """data/rulings.json `trials`: {"<helper>/<job>/<trial dir>": {"result", "decided", "reason"}}."""
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "rb") as f:
+        return (load_json(f.read()) or {}).get("trials") or {}
+
+
+def rejudge(trials, bdir, rulings=None):
     """Trials a runner voided, or voided and ran again (`superseded`), for a Harbor exception that RoboARC's rule of
     2026-11-12 counts as the agent's own end (agent_end(): the output-token maximum, the context window, a kill at its
     own memory cap): a result, judged from the trial's own records (judge()), result_source "rejudged". Runs over every
     trial, old and new, so a bundle need not be digested again; a trial the runner voided for any other reason (no
-    reward.json, infra_error, a model-account failure, the gateway) is left as it is. Returns how many changed."""
+    reward.json, infra_error, a model-account failure, the gateway) is left as it is. A trial the benchmark owners ruled
+    on (data/rulings.json) takes the ruling's result, result_source "ruled". Returns how many changed."""
     details, changed = {}, 0
+    rulings = load_rulings() if rulings is None else rulings
+    for t in trials:
+        r = rulings.get(f"{t['bundle'].split('__')[0]}/{t.get('job')}/{t.get('trial_dir')}")
+        if r and r.get("result") in ("success", "fail") and t.get("result_source") != "ruled":
+            t.update(result=r["result"], result_source="ruled", counted=True,
+                     reason=RULED.format(r.get("decided", "?"), r.get("reason", "")))
+            changed += 1
     for t in trials:
         ex = t.get("exception_type") or ""
         if t.get("result") != "not_a_result" or not ex or ex == "AgentTimeoutError":
@@ -694,7 +712,7 @@ def rejudge(trials, bdir):
         group.setdefault((t["bundle"].split("__")[0], t.get("run_id"), t.get("base"), t.get("mode"), t["seed"], t["k"]), []).append(t)
     for ts in group.values():
         res = sorted((t for t in ts if t.get("result") in ("success", "fail")), key=lambda t: t.get("finished_at") or "")
-        if not res or res[0].get("result_source") != "rejudged":
+        if not res or res[0].get("result_source") not in ("rejudged", "ruled"):
             continue
         first = res[0]
         for t in res[1:]:
@@ -962,7 +980,7 @@ def main():
     bundles.sort(key=lambda b: b.get("uploaded_at") or "", reverse=True)
     rejudged = rejudge(trials, bdir)
     if rejudged:
-        print(f"rejudged {rejudged} trial(s) a runner voided: the agent's own end, a result (rejudge())", flush=True)
+        print(f"rejudged {rejudged} trial(s): the agent's own end or the owners' ruling, a result (rejudge())", flush=True)
     if not new and not rejudged and os.path.isfile(args.out) and set(old) == seen:
         print(f"no change: {len(bundles)} bundles, {len(trials)} trials ({os.path.normpath(args.out)} kept)")
         return

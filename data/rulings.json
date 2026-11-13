@@ -1,0 +1,10 @@
+{
+ "note": "Results the benchmark owners decided for single trials that the rules leave void: trials[\"<helper>/<job>/<trial dir>\"] = {\"result\": \"success\" or \"fail\", \"decided\": the date, \"reason\": shown on the page}. tools/digest.py rejudge() sets the trial's result (result_source \"ruled\"), and a later run of the same trial is not counted (a result is never run again, PROTOCOL H.5). Removing an entry takes effect on the next `tools/digest.py --redo`.",
+ "trials": {
+  "tanreuben/copilot-opus55-xhigh-privileged-seed2-k3-20261109-073516-privileged-roboarc-slotted-post-ring-04-i01-t2/roboarc-slotted-post-ring-04-i01__L6FYrW3": {
+   "result": "fail",
+   "decided": "2026-11-13",
+   "reason": "the agent's own end, a result. Copilot ends a model request after 600 s (HTTP 504); one request of Opus 5.5 at effort xhigh, thinking for 6 to 9 minutes, ran into that limit six times, and Claude Code gave up (NetworkConnectionError). The limit is the same for every Claude Code + Opus 5.5 trial through Copilot, and the rerun of 2026-11-12 ended the same way."
+  }
+ }
+}
