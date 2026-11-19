@@ -83,6 +83,29 @@ than `AgentTimeoutError` not a result), without the runner's model-account check
 grows while its batch runs, so the digest reads it again whenever its folder's last commit changes, and only the
 archives it has not read: the others' records are kept in `data/bundles/<key>.archives.json`.
 
+## Rebuttal experiments (rebuttal.html)
+
+A second tab, `rebuttal.html`, follows the rebuttal experiments E1–E5 of RoboARC's `dev/qineng-rebuttal-exp`
+(`docs/REBUTTAL_EXPERIMENTS.md`: 366 trials on task variants, every one at seed 0), delivered to their own dataset
+[RoboARC/RoboARC-rebuttal-outputs](https://huggingface.co/datasets/RoboARC/RoboARC-rebuttal-outputs) in the same format.
+
+- The plan, `data/rebuttal/plan.json`, is RoboARC's `scripts/rebuttal/experiments.py` (`tools/build_rebuttal_plan.py`):
+  per experiment its harness, model, effort and run id, tasks, conditions, modes, repeats and batch names
+  (`rebuttal-e<n>-r<k>`; the smoke `rebuttal-smoke-e<n>`).
+- The workflow digests the dataset beside the main one (`tools/digest.py --dataset RoboARC/RoboARC-rebuttal-outputs --out
+  data/rebuttal/digest.json --skip-batch '^rebuttal-checks$'`), into `data/rebuttal/digest.json` and `data/rebuttal/bundles/`.
+- A trial's batch gives its experiment and repeat; its task, `<base>-<token>-<mode>`, its condition. Each planned trial
+  (experiment, repeat, base, condition, mode) is a slot; a rerun is another attempt of the same slot, and the slot's result
+  is its last attempt with a result. A trial whose run id, effort, seed, task, condition or mode is not the plan's is
+  flagged.
+- The step-1 variant checks (`<helper>/rebuttal-checks/<UTC time>/E<n>.json`, `bash-runners/rebuttal/send_checks.sh`) are
+  not deliveries: the page reads them live, the latest report per experiment, with E4's rendered scenes (`e4_render/`).
+- For reference, the page loads the main digest and shows the main evaluation's results of the same released tasks at
+  seed 0 with the same harness and model (any effort: its run id says which).
+- Its trials open the same timeline page, with `?ds=RoboARC/RoboARC-rebuttal-outputs`.
+- `node tools/test_rebuttal_model.mjs` tests the page's model (`assets/rebuttal-model.js`) and sections on synthetic
+  deliveries.
+
 ## Set up
 
 1. Create a GitHub repository and push this directory to its `main` branch.
@@ -101,8 +124,11 @@ archives it has not read: the others' records are kept in `data/bundles/<key>.ar
 | `data/unofficial.json` | by hand | a delivery to keep out of the progress that its helper did not mark unofficial: `bundles[<helper>__<batch>__<bundle id>]` = the reason shown on the page |
 | `data/frames.json`, `frames/` | by hand (renders) | first frames: `frames[<base>][<seed>] = "frames/<base>/seed<k>.jpg"` |
 | `data/digest.json`, `data/bundles/` | `tools/digest.py` (the workflow); `<key>.archives.json` is its record of the archives it has read of a delivery of job archives alone | never by hand |
+| `data/rebuttal/plan.json` | `python3 tools/build_rebuttal_plan.py --roboarc <checkout of dev/qineng-rebuttal-exp>` (Python ≥ 3.11) | when the rebuttal experiments change on that branch |
+| `data/rebuttal/digest.json`, `data/rebuttal/bundles/` | `tools/digest.py --dataset RoboARC/RoboARC-rebuttal-outputs --out data/rebuttal/digest.json --skip-batch '^rebuttal-checks$'` (the workflow) | never by hand |
 
 ## Local preview
 
     python3 tools/digest.py                 # or: --local <dir with <helper>/<batch>/<bundle>/ bundles>
     python3 -m http.server 8000             # then open http://localhost:8000/ (add ?offline to skip the live listing)
+                                            # and http://localhost:8000/rebuttal.html for the rebuttal tab

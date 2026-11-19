@@ -3,6 +3,8 @@
 
     python3 tools/digest.py                      # the Hugging Face dataset (default RoboARC/RoboARC-outputs)
     python3 tools/digest.py --local <dir>        # bundles on disk: <dir>/<helper>/<batch>/<bundle id>/ (for testing)
+    python3 tools/digest.py --dataset RoboARC/RoboARC-rebuttal-outputs --out data/rebuttal/digest.json \
+        --skip-batch '^rebuttal-checks$'         # the rebuttal experiments (rebuttal.html); their variant checks are no delivery
 
 A delivery (scripts/send_results.sh in RoboARC) is one bundle at <helper>/<batch>/<bundle id>/: MANIFEST.md, index.json,
 batch.tar.gz (the batch log, its summary and plan, and the per-trial results) and jobs/<job>.tar.gz (one per Harbor
@@ -818,9 +820,9 @@ def machine(man, log_hw, jobs_info, trials):
     return None
 
 
-def digest_bundle(src, key, rev, label, path, uploaded_at, cache=None, old_detail=None):
+def digest_bundle(src, key, rev, label, path, uploaded_at, cache=None, old_detail=None, detail_dir="data/bundles"):
     """cache, old_detail: a delivery of job archives alone (gather_archives): its archives digested before, updated here,
-    and its last detail file's per-trial records."""
+    and its last detail file's per-trial records. detail_dir: where the page finds the detail file (the --out's bundles/)."""
     man_b = src.read(rev, f"{path}/MANIFEST.md")
     idx = load_json(src.read(rev, f"{path}/index.json") or b"null") or {}
     listing = src.files(rev, path) if not man_b and not idx else None
@@ -899,7 +901,7 @@ def digest_bundle(src, key, rev, label, path, uploaded_at, cache=None, old_detai
         "log": {k: v for k, v in (log or {}).items() if k not in ("jobs", "notable", "pids", "runner", "hardware")} or None,
         "jobs": len(g["jobs"]), "trials": len(trials), "errors": errors,
         "effort_as_run": [{"effort": e, "source": s, "trials": n} for (e, s), n in sorted(as_run.items(), key=str)] or None,
-        "detail_file": f"data/bundles/{key}.json", "digested_at": now(), "digest_version": DIGEST_VERSION,
+        "detail_file": f"{detail_dir}/{key}.json", "digested_at": now(), "digest_version": DIGEST_VERSION,
     }
     det = {"key": key, "manifest_text": g["manifest_text"], "summary_md": g["summary"],
            "log_notable": (log or {}).get("notable", []), "trials": detail}
@@ -920,6 +922,8 @@ def main():
     ap.add_argument("--dataset", default="RoboARC/RoboARC-outputs")
     ap.add_argument("--local")
     ap.add_argument("--out", default=os.path.join(DATA, "digest.json"))
+    ap.add_argument("--skip-batch", default="", metavar="REGEX",
+                    help="leave out <helper>/<batch>/<bundle>/ folders whose batch matches (e.g. the rebuttal's variant checks)")
     ap.add_argument("--redo", action="store_true", help="digest every bundle again")
     ap.add_argument("--minutes", type=float, default=150,
                     help="start no new digest after this long; the deliveries left wait for the next run (the workflow "
@@ -937,6 +941,10 @@ def main():
             old = {b["key"]: (b, [t for t in prev["trials"] if t["bundle"] == b["key"]]) for b in prev["bundles"]}
 
     listed = src.bundles()
+    if args.skip_batch:
+        listed = [x for x in listed if not re.search(args.skip_batch, x[3].split("/")[1])]
+    # the detail files' path as the page loads it: relative to the site's root (the folder above tools/)
+    detail_dir = os.path.relpath(bdir, os.path.join(HERE, "..")).replace(os.sep, "/")
     seen, bundles, trials, new = set(), [], [], 0
     # main first: a bundle that is both in main and in a pull request is the merged one
     for key, rev, label, path, date in sorted(listed, key=lambda x: (x[1] != "main", x[0])):
@@ -963,7 +971,7 @@ def main():
             keep = os.path.isfile(cfile) and not args.redo
             cache = (load_json(open(cfile, "rb").read()) if keep else None) or {}
             old_detail = ((load_json(open(dfile, "rb").read()) or {}).get("trials") or {}) if keep and os.path.isfile(dfile) else {}
-            b, ts, det = digest_bundle(src, key, rev, label, path, date, cache, old_detail)
+            b, ts, det = digest_bundle(src, key, rev, label, path, date, cache, old_detail, detail_dir)
             with open(dfile, "w") as f:
                 json.dump(det, f, ensure_ascii=False, separators=(",", ":"))
             if b.get("layout") == "archives":

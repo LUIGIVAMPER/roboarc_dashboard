@@ -1,5 +1,6 @@
-# Digest new deliveries of the RoboARC outputs dataset every 30 minutes, commit data/ when it changed, and publish the
-# site to GitHub Pages (Settings > Pages > Source: GitHub Actions).
+# Digest new deliveries of the RoboARC outputs dataset (index.html) and of the rebuttal's dataset (rebuttal.html) every
+# 30 minutes, side by side, commit data/ when it changed, then publish the site to GitHub Pages (Settings > Pages >
+# Source: GitHub Actions) from main as both digests left it.
 name: digest and publish
 
 on:
@@ -22,9 +23,20 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: outputs
+            args: ""
+            paths: data/digest.json data/bundles
+          - name: rebuttal
+            args: --dataset RoboARC/RoboARC-rebuttal-outputs --out data/rebuttal/digest.json --skip-batch '^rebuttal-checks$'
+            paths: data/rebuttal/digest.json data/rebuttal/bundles
+    name: digest (${{ matrix.name }})
     steps:
       # main as it is now, not the commit that queued the run: a run queued behind another starts after that one
-      # committed data/digest.json, and its own commit must rebase onto it
+      # committed its digest, and its own commit must rebase onto it
       - uses: actions/checkout@v4
         with:
           ref: main
@@ -32,29 +44,39 @@ jobs:
         with:
           python-version: "3.12"
       - name: Digest the dataset
-        run: python3 tools/digest.py
+        run: python3 tools/digest.py ${{ matrix.args }}
       - name: Commit data/ if it changed
         run: |
-          git add data/digest.json data/bundles
+          mkdir -p data/rebuttal/bundles
+          git add ${{ matrix.paths }}
           if git diff --cached --quiet; then
             echo "no new deliveries"
           else
             git config user.name "roboarc-dashboard digest"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "digest: $(date -u +%Y-%m-%dT%H:%MZ)"
-            git pull --rebase origin main
-            git push
+            git commit -m "digest (${{ matrix.name }}): $(date -u +%Y-%m-%dT%H:%MZ)"
+            # the other digest may push in between: rebase onto it (they write different files) and try again
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main && git push && exit 0
+              sleep $((i * 10))
+            done
+            exit 1
           fi
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
 
   publish:
     needs: digest
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # main after both digests pushed
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
       - id: deployment
         uses: actions/deploy-pages@v4

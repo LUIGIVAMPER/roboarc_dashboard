@@ -1,0 +1,260 @@
+{
+ "note": "The rebuttal experiments as RoboARC's scripts/rebuttal/experiments.py plans them (tools/build_rebuttal_plan.py). Every trial runs at appearance seed 0; a repeat is a batch of its own (rebuttal-e<n>-r<k>); the variant of a base for a condition and mode is the task <base>-<token>-<mode>.",
+ "commit": "c847e730",
+ "branch": "dev/qineng-rebuttal-exp",
+ "dataset": "RoboARC/RoboARC-rebuttal-outputs",
+ "total": 366,
+ "experiments": [
+  {
+   "id": "E1",
+   "purpose": "more tasks for the information ablation",
+   "agent": "codex",
+   "model": "gpt-6-astra",
+   "run_id": "codex-gpt6_astra-high",
+   "effort": "high",
+   "repeats": 3,
+   "modes": [
+    "standard"
+   ],
+   "batches": [
+    "rebuttal-e1-r1",
+    "rebuttal-e1-r2",
+    "rebuttal-e1-r3"
+   ],
+   "smoke_batch": "rebuttal-smoke-e1",
+   "smoke_base": "roboarc-bed-bolt-03-i01",
+   "bases": [
+    "roboarc-bed-bolt-03-i01",
+    "roboarc-buzz-wire-3d-07-i01",
+    "roboarc-cast-coil-06-i01",
+    "roboarc-cast-keyhole-03-i01",
+    "roboarc-cast-keyhole-04-i01",
+    "roboarc-hedgehog-in-cage-06-i01",
+    "roboarc-horseshoe-ring-02-i01",
+    "roboarc-horseshoe-ring-03-i01",
+    "roboarc-horseshoe-ring-04-i01",
+    "roboarc-interlocked-claws-05-i01",
+    "roboarc-interlocked-claws-11-i01",
+    "roboarc-interlocked-claws-12-i01",
+    "roboarc-interlocked-claws-13-i01"
+   ],
+   "conditions": [
+    {
+     "token": "q1c00",
+     "label": "C00",
+     "note": "probing v2 Q1 C00r: the standard task with the per-call log patch only (the concurrent control)"
+    },
+    {
+     "token": "q1c10",
+     "label": "C10",
+     "note": "probing v2 Q1 C10: standard plus the task objects' poses in meta['objects'], robot frame"
+    },
+    {
+     "token": "q1c0g",
+     "label": "C0G",
+     "note": "probing v2 Q1 C0g (11-15): standard plus the part shapes (GET /geometry), each in its own frame, no poses, no internal state"
+    },
+    {
+     "token": "q1c1g",
+     "label": "C1G",
+     "note": "probing v2 Q1 C1g: standard plus the task objects' poses (C10) and the part shapes (GET /geometry), no internal state, robot frame"
+    }
+   ],
+   "trials": 156
+  },
+  {
+   "id": "E2",
+   "purpose": "a second agent for the same ablation",
+   "agent": "claude-code",
+   "model": "claude-opus-5.5",
+   "run_id": "claude_code-opus_5_5-high",
+   "effort": "high",
+   "repeats": 2,
+   "modes": [
+    "standard"
+   ],
+   "batches": [
+    "rebuttal-e2-r1",
+    "rebuttal-e2-r2"
+   ],
+   "smoke_batch": "rebuttal-smoke-e2",
+   "smoke_base": "roboarc-battery-replacement-01-i01",
+   "bases": [
+    "roboarc-battery-replacement-01-i01",
+    "roboarc-bed-bolt-01-i01",
+    "roboarc-bed-bolt-02-i01",
+    "roboarc-bed-bolt-04-i01",
+    "roboarc-bed-bolt-05-i01",
+    "roboarc-buzz-wire-3d-02-i01",
+    "roboarc-buzz-wire-3d-06-i01",
+    "roboarc-buzz-wire-3d-10-i01",
+    "roboarc-caliper-sorting-01-i01",
+    "roboarc-cast-coil-04-i01",
+    "roboarc-cast-coil-07-i01",
+    "roboarc-cast-coil-08-i01",
+    "roboarc-cast-keyhole-05-i01",
+    "roboarc-cast-keyhole-06-i01",
+    "roboarc-hedgehog-in-cage-07-i01"
+   ],
+   "conditions": [
+    {
+     "token": "q1c00",
+     "label": "C00",
+     "note": "probing v2 Q1 C00r: the standard task with the per-call log patch only (the concurrent control)"
+    },
+    {
+     "token": "q1c10",
+     "label": "C10",
+     "note": "probing v2 Q1 C10: standard plus the task objects' poses in meta['objects'], robot frame"
+    },
+    {
+     "token": "q1c0g",
+     "label": "C0G",
+     "note": "probing v2 Q1 C0g (11-15): standard plus the part shapes (GET /geometry), each in its own frame, no poses, no internal state"
+    },
+    {
+     "token": "q1c1g",
+     "label": "C1G",
+     "note": "probing v2 Q1 C1g: standard plus the task objects' poses (C10) and the part shapes (GET /geometry), no internal state, robot frame"
+    }
+   ],
+   "trials": 120
+  },
+  {
+   "id": "E3",
+   "purpose": "the information ablation on deformable tasks",
+   "agent": "codex",
+   "model": "gpt-6-astra",
+   "run_id": "codex-gpt6_astra-high",
+   "effort": "high",
+   "repeats": 1,
+   "modes": [
+    "standard"
+   ],
+   "batches": [
+    "rebuttal-e3-r1"
+   ],
+   "smoke_batch": "rebuttal-smoke-e3",
+   "smoke_base": "roboarc-blanket-flatten-06-i01",
+   "bases": [
+    "roboarc-blanket-flatten-06-i01",
+    "roboarc-blanket-flatten-08-i01",
+    "roboarc-blanket-fold-01-i01",
+    "roboarc-blanket-fold-02-i01",
+    "roboarc-blanket-fold-03-i01",
+    "roboarc-blanket-fold-04-i01",
+    "roboarc-blanket-fold-05-i01",
+    "roboarc-fiber-bundling-02-i01",
+    "roboarc-fiber-bundling-04-i01",
+    "roboarc-fiber-bundling-05-i01",
+    "roboarc-fiber-bundling-08-i01",
+    "roboarc-fiber-bundling-09-i01",
+    "roboarc-knot-untying-06-i01",
+    "roboarc-knot-untying-09-i01",
+    "roboarc-orbits-02-i01",
+    "roboarc-rope-threading-06-i01",
+    "roboarc-rope-threading-07-i01",
+    "roboarc-rope-threading-08-i01"
+   ],
+   "conditions": [
+    {
+     "token": "q1c00",
+     "label": "C00",
+     "note": "probing v2 Q1 C00r: the standard task with the per-call log patch only (the concurrent control)"
+    },
+    {
+     "token": "cstate",
+     "label": "CS",
+     "note": "rebuttal E3 CS: standard plus the deformable state and the other task objects' poses and shapes in every response, robot frame"
+    }
+   ],
+   "trials": 36
+  },
+  {
+   "id": "E4",
+   "purpose": "does the difficulty come from the clearance",
+   "agent": "codex",
+   "model": "gpt-6-astra",
+   "run_id": "codex-gpt6_astra-high",
+   "effort": "high",
+   "repeats": 1,
+   "modes": [
+    "privileged",
+    "standard"
+   ],
+   "batches": [
+    "rebuttal-e4-r1"
+   ],
+   "smoke_batch": "rebuttal-smoke-e4",
+   "smoke_base": "roboarc-bed-bolt-01-i01",
+   "bases": [
+    "roboarc-bed-bolt-01-i01",
+    "roboarc-bed-bolt-03-i01",
+    "roboarc-lock-picking-04-i01",
+    "roboarc-lock-picking-05-i01",
+    "roboarc-cast-coil-06-i01",
+    "roboarc-cast-coil-07-i01"
+   ],
+   "conditions": [
+    {
+     "token": "clr2x",
+     "label": "clearance x2",
+     "note": "rebuttal E4: the puzzle's clearance relaxed x2; scene, start state, robot and grader logic otherwise unchanged"
+    },
+    {
+     "token": "clr4x",
+     "label": "clearance x4",
+     "note": "rebuttal E4: the puzzle's clearance relaxed x4; scene, start state, robot and grader logic otherwise unchanged"
+    }
+   ],
+   "trials": 24
+  },
+  {
+   "id": "E5",
+   "purpose": "is the Standard regime realistic enough",
+   "agent": "codex",
+   "model": "gpt-6-astra",
+   "run_id": "codex-gpt6_astra-high",
+   "effort": "high",
+   "repeats": 1,
+   "modes": [
+    "standard"
+   ],
+   "batches": [
+    "rebuttal-e5-r1"
+   ],
+   "smoke_batch": "rebuttal-smoke-e5",
+   "smoke_base": "roboarc-battery-replacement-01-i01",
+   "bases": [
+    "roboarc-battery-replacement-01-i01",
+    "roboarc-bed-bolt-01-i01",
+    "roboarc-bed-bolt-02-i01",
+    "roboarc-bed-bolt-04-i01",
+    "roboarc-bed-bolt-05-i01",
+    "roboarc-buzz-wire-3d-02-i01",
+    "roboarc-buzz-wire-3d-06-i01",
+    "roboarc-buzz-wire-3d-10-i01",
+    "roboarc-caliper-sorting-01-i01",
+    "roboarc-cast-coil-04-i01",
+    "roboarc-cast-coil-07-i01",
+    "roboarc-cast-coil-08-i01",
+    "roboarc-cast-keyhole-05-i01",
+    "roboarc-cast-keyhole-06-i01",
+    "roboarc-hedgehog-in-cage-07-i01"
+   ],
+   "conditions": [
+    {
+     "token": "obsv1",
+     "label": "V1",
+     "note": "rebuttal E5 V1: the standard task (with the C00 log patch) without the contact-safety readings (no meta['safety'])"
+    },
+    {
+     "token": "obsv2",
+     "label": "V2",
+     "note": "rebuttal E5 V2: V1 plus RealSense-like depth noise and a fixed camera-calibration error (observation side only)"
+    }
+   ],
+   "trials": 30
+  }
+ ]
+}

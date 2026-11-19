@@ -3,7 +3,8 @@
 
 import {
   HF, DEFAULT_DATASET, STATUS_LABEL, $, esc, pct, median, fmtDur, fmtDays, fmtDate, minuteStamp, abs, when,
-  getJSON, getText, encRev, encPath, hfResolveIn, hfBlobIn, statusOf, timelineHref, parseManifest, trialsFromIndex, readLoose,
+  getJSON, getText, hfResolveIn, hfBlobIn, statusOf, timelineHref, parseManifest, trialsFromIndex, readLoose,
+  pool, listBundlesIn,
 } from "./common.js";
 
 const LIVE_EVERY_MS = 5 * 60 * 1000;
@@ -19,54 +20,17 @@ const S = {
   model: null,          // derived: slots, progress, ...
 };
 
-async function pool(items, n, fn) {
-  const out = [];
-  let i = 0;
-  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
-    while (i < items.length) { const k = i++; out[k] = await fn(items[k]); }
-  }));
-  return out;
-}
 const hfResolve = (rev, path) => hfResolveIn(S.dataset, rev, path);
 const hfBlob = (rev, path) => hfBlobIn(S.dataset, rev, path);
 
 // ---------- live listing of the dataset ----------
-
-async function hfTree(rev, path) {
-  const url = `${HF}/api/datasets/${S.dataset}/tree/${encRev(rev)}${path ? "/" + encPath(path) : ""}?expand=true`;
-  return (await getJSON(url, { optional: true })) || [];
-}
-async function hfRevisions() {
-  const revs = [{ rev: "main", label: "main" }];
-  for (let p = 0; p < 20; p++) {
-    const d = await getJSON(`${HF}/api/datasets/${S.dataset}/discussions?p=${p}`);
-    for (const x of d.discussions || []) if (x.isPullRequest && x.status === "open") revs.push({ rev: `refs/pr/${x.num}`, label: `PR #${x.num}` });
-    if (!d.discussions?.length || (p + 1) * 50 >= (d.count || 0)) break;
-  }
-  return revs;
-}
-async function listBundles() {
-  const out = [];
-  for (const { rev, label } of await hfRevisions()) {
-    const helpers = (await hfTree(rev, "")).filter((e) => e.type === "directory");
-    for (const h of helpers) {
-      const batches = (await hfTree(rev, h.path)).filter((e) => e.type === "directory");
-      const lists = await pool(batches, 4, (b) => hfTree(rev, b.path));
-      lists.forEach((us) => us.filter((e) => e.type === "directory").forEach((u) => out.push({
-        key: u.path.split("/").join("__"), rev, label, path: u.path, uploaded_at: u.lastCommit?.date || null,
-      })));
-    }
-  }
-  const seen = new Set();
-  return out.sort((a, b) => (a.rev !== "main") - (b.rev !== "main")).filter((b) => !seen.has(b.key) && seen.add(b.key));
-}
 
 async function refreshLive() {
   const btn = $("#refresh");
   btn.disabled = true;
   try {
     const info = await getJSON(`${HF}/api/datasets/${S.dataset}`);
-    const listed = await listBundles();
+    const listed = await listBundlesIn(S.dataset);
     const known = new Set(S.digest.bundles.map((b) => b.key));
     const fresh = listed.filter((b) => !known.has(b.key));
     const trials = [];

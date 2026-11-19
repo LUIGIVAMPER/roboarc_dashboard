@@ -6,7 +6,7 @@
 
 import {
   HF, DEFAULT_DATASET, STATUS_LABEL, $, esc, fmtInt, fmtDur, abs, getJSON, getText, hfResolveIn, hfBlobIn, statusOf,
-  timelineHref, parseManifest, trialsFromIndex, minuteStamp, encRev, encPath, listFiles, readLoose, filesLoose,
+  timelineHref, parseManifest, trialsFromIndex, minuteStamp, encRev, encPath, listFiles, readLoose, filesLoose, digestPathOf, pageOf,
 } from "./common.js";
 
 // ---------- reading a job archive in the browser (gzip stream + tar), stopping early ----------
@@ -234,7 +234,8 @@ const trialDir = () => T.dir || `${T.path}/jobs/${T.job}/${T.trial}`;   // a loo
 // ---------- the result panel ----------
 
 async function loadTrialRecord() {
-  const digest = await getJSON(`data/digest.json?v=${minuteStamp()}`, { optional: true }).catch(() => null);
+  // the digest of the trial's dataset (?ds=: the rebuttal's has its own, data/rebuttal/digest.json)
+  const digest = await getJSON(`${digestPathOf(P.get("ds"))}?v=${minuteStamp()}`, { optional: true }).catch(() => null);
   if (!P.get("ds") && digest?.dataset && !digest.dataset.startsWith("/")) T.dataset = digest.dataset;
   const key = T.path.split("/").join("__");
   let b = digest?.bundles?.find((x) => x.path === T.path) || null;
@@ -803,6 +804,8 @@ async function loadTimeline() {
 }
 
 async function start() {
+  const back = document.querySelector(".back");   // back to the page that lists this dataset's trials
+  if (back) { back.href = pageOf(T.dataset).href; back.textContent = `← ${pageOf(T.dataset).title}`; }
   if (!T.rev || !T.path || !T.job || !T.trial) {
     $("#tl-title").textContent = "No trial named";
     status(`<span><span class="dot err"></span>Open a trial from the progress page: this page needs <code>rev</code>, <code>path</code>, <code>job</code> and <code>trial</code>.</span>`);

@@ -82,6 +82,12 @@ button { font: inherit; }
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn[disabled] { opacity: 0.5; cursor: default; }
 
+/* page tabs: the main runs (index.html) and the rebuttal experiments (rebuttal.html) */
+.pagetabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 6px; overflow-x: auto; scrollbar-width: none; }
+.pagetabs a { padding: 6px 14px; color: var(--muted); font-size: var(--step--1); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.pagetabs a:hover { color: var(--ink); text-decoration: none; }
+.pagetabs a[aria-current="page"] { color: var(--ink); font-weight: 500; border-bottom-color: var(--accent); }
+
 /* sticky section bar */
 .navbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 21; background: var(--bg); }
@@ -308,6 +314,29 @@ details.ev .ev-body pre.log { white-space: pre-wrap; overflow-wrap: anywhere; ma
 .tl-video-pos { display: flex; flex-wrap: wrap; gap: 2px 14px; font-variant-numeric: tabular-nums; min-width: 0; flex: 1 1 auto; }
 .tl-video-pos b { color: var(--ink); font-weight: 500; }
 .tl-video-now label { color: var(--ink); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+
+/* rebuttal page (rebuttal.html) */
+.rgrid { display: grid; min-width: 640px; }
+.rrow { display: grid; grid-template-columns: minmax(200px, 1.4fr) repeat(var(--cols), minmax(58px, 1fr)) repeat(var(--refs), minmax(54px, 0.7fr)); align-items: center; border-bottom: 1px solid var(--line); }
+.rrow:last-child { border-bottom: 0; }
+.rrow.head { position: sticky; top: 0; background: var(--surface-2); font-size: var(--step--2); color: var(--muted); z-index: 1; }
+.rrow.head > div { padding: 8px 8px; line-height: 1.3; }
+.rrow .ref, .rrow.head .ref { border-left: 1px dashed var(--line); }
+.rcell { display: flex; gap: 2px; padding: 5px 8px; align-items: center; }
+.rcell .cell[data-trial] { cursor: pointer; }
+.rcell .cell.flag { outline: 2px solid var(--fail); outline-offset: 1px; }
+.tabs[role="tablist"] button { font-size: var(--step--1); padding: 4px 12px; }
+.chk-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; align-items: baseline; }
+.renders { display: grid; gap: 14px; }
+.render-var { display: grid; gap: 6px; }
+.render-var .t { font-family: var(--font-mono); font-size: var(--step--2); }
+.render-row { display: grid; grid-template-columns: 72px repeat(var(--n), minmax(0, 1fr)); gap: 6px; align-items: center; }
+.render-row .lbl { font-size: var(--step--2); color: var(--muted); }
+.render-row img { width: 100%; border-radius: 4px; background: var(--surface-2); display: block; }
+.smoke-block { padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.smoke-block table td, .smoke-block table th { padding: 5px 8px; }
+td.flags { color: var(--fail); font-size: var(--step--2); }
+tr.ref td { color: var(--muted); background: color-mix(in srgb, var(--surface-2) 50%, transparent); }
 
 footer.wrap { padding-block: 0 48px; color: var(--faint); font-size: var(--step--2); display: grid; gap: 4px; }
 

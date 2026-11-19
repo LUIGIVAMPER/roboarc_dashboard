@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RoboARC Rebuttal Experiments</title>
+<meta name="description" content="Progress and results of the RoboARC rebuttal experiments E1–E5 (366 trials), read live from the Hugging Face dataset RoboARC/RoboARC-rebuttal-outputs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="wrap masthead">
+  <nav class="pagetabs" aria-label="Pages"><a href="./">Main runs</a><a href="rebuttal.html" aria-current="page">Rebuttal</a></nav>
+  <div class="eyebrow" id="release">RoboARC rebuttal</div>
+  <h1>RoboARC Rebuttal Experiments</h1>
+  <p class="lead" id="lead">Five experiments, E1–E5, on task variants of the released puzzles: 366 trials, every one at appearance seed 0. Each step is sent back to the Hugging Face dataset and checked before the next: the variant checks, the smoke, then the runs, one batch per repeat.</p>
+  <div class="statusline">
+    <span id="live-status"><span class="dot"></span>Reading Hugging Face…</span>
+    <span id="digest-status"></span>
+    <button class="btn" id="refresh" type="button">Refresh</button>
+  </div>
+</header>
+
+<div class="navbar">
+  <div class="wrap">
+    <nav aria-label="Sections">
+      <a href="#overview">Progress</a>
+      <a href="#checks">Step 1: variant checks</a>
+      <a href="#smoke">Step 2: smoke</a>
+      <a href="#results">Results by condition</a>
+      <a href="#rmatrix">Task matrix</a>
+      <a href="#problems">Errors and reruns</a>
+      <a href="#deliveries">Deliveries</a>
+    </nav>
+  </div>
+</div>
+
+<main class="wrap">
+  <section id="overview" aria-labelledby="h-overview">
+    <div class="section-head">
+      <h2 id="h-overview">Progress by experiment</h2>
+      <div class="legend">
+        <span><i class="sw ok"></i>success</span>
+        <span><i class="sw fail"></i>fail (a result)</span>
+        <span><i class="sw void"></i>not a result, to rerun</span>
+        <span><i class="sw wait"></i>delivered, awaiting digest</span>
+        <span><i class="sw"></i>not run</span>
+      </div>
+    </div>
+    <div id="overall"></div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section id="checks" aria-labelledby="h-checks">
+    <div class="section-head">
+      <h2 id="h-checks">Step 1: variant checks</h2>
+      <p>The latest report of each experiment from <code>&lt;helper&gt;/rebuttal-checks/&lt;UTC time&gt;/</code> (<code>bash-runners/rebuttal/send_checks.sh</code>): every variant's DIGEST as locked, the reference solution scoring 1 and doing nothing scoring 0, the condition's own check. An experiment's runner starts only after its report passed.</p>
+    </div>
+    <div id="check-table"></div>
+    <div id="check-detail" class="hosts"></div>
+  </section>
+
+  <section id="smoke" aria-labelledby="h-smoke">
+    <div class="section-head">
+      <h2 id="h-smoke">Step 2: smoke</h2>
+      <p>One trial of each variant of each experiment's first task, in the batches <code>rebuttal-smoke-e1</code> … <code>rebuttal-smoke-e5</code> (16 trials, not part of the results). Open a trial for its timeline.</p>
+    </div>
+    <div id="smoke-list" class="share"></div>
+  </section>
+
+  <section id="results" aria-labelledby="h-results">
+    <div class="section-head">
+      <h2 id="h-results">Results by condition</h2>
+      <p>Successes over trials with a result, per condition and mode, overall and per repeat. The last rows of each table are the main evaluation's results of the same released tasks at seed 0 with the same harness and model, for reference: its run id names the effort, which may differ from the experiment's.</p>
+    </div>
+    <div id="results-list" class="hosts"></div>
+  </section>
+
+  <section id="rmatrix" aria-labelledby="h-rmatrix">
+    <div class="section-head">
+      <h2 id="h-rmatrix">Task matrix</h2>
+      <p>One row per task, one column per condition and mode, one square per repeat; on the right the main evaluation's released task at seed 0 (standard, privileged). Hover for the trial, click to open its timeline.</p>
+    </div>
+    <div class="tabs" id="mx-exp" role="tablist" aria-label="Experiment"></div>
+    <div class="table-wrap"><div class="rgrid" id="rmatrix-grid"></div></div>
+  </section>
+
+  <section id="problems" aria-labelledby="h-problems">
+    <div class="section-head">
+      <h2 id="h-problems">Errors and reruns</h2>
+      <p>Trials that are not a result (an infrastructure failure: rerun with the same seed and batch), trials with a Harbor exception, trials run more than once, and trials whose settings do not match the plan (run id, effort, seed, task, condition, mode). Open a row for its timeline.</p>
+    </div>
+    <div class="chips" id="problem-kinds"></div>
+    <div id="problem-table"></div>
+  </section>
+
+  <section id="deliveries" aria-labelledby="h-deliveries">
+    <div class="section-head">
+      <h2 id="h-deliveries">Deliveries</h2>
+      <p>Every bundle in the dataset (<code>&lt;helper&gt;/&lt;batch&gt;/&lt;bundle&gt;/</code>), open pull requests included, with the trials its batch plans. A later delivery of a batch carries its earlier trials again: each trial counts once, from the latest.</p>
+    </div>
+    <div id="delivery-table"></div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Data: the Hugging Face dataset <a id="ds-link" href="https://huggingface.co/datasets/RoboARC/RoboARC-rebuttal-outputs" target="_blank" rel="noopener">RoboARC/RoboARC-rebuttal-outputs</a> (public). The delivery format is RoboARC's <code>scripts/send_results.sh</code>; the guide is <code>docs/REBUTTAL_EXPERIMENTS.md</code>.</p>
+  <p id="foot-plan"></p>
+</footer>
+
+<script src="assets/rebuttal.js" type="module"></script>
+</body>
+</html>

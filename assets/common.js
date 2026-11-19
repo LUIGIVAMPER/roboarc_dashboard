@@ -4,6 +4,12 @@
 
 export const HF = "https://huggingface.co";
 export const DEFAULT_DATASET = "RoboARC/RoboARC-outputs";
+export const REBUTTAL_DATASET = "RoboARC/RoboARC-rebuttal-outputs";
+// each dataset's digest (tools/digest.py --out) and the page that shows it
+const DIGEST_OF = { [DEFAULT_DATASET]: "data/digest.json", [REBUTTAL_DATASET]: "data/rebuttal/digest.json" };
+const PAGE_OF = { [DEFAULT_DATASET]: { href: "./", title: "RoboARC Run Progress" }, [REBUTTAL_DATASET]: { href: "rebuttal.html", title: "RoboARC Rebuttal Experiments" } };
+export const digestPathOf = (dataset) => DIGEST_OF[dataset || DEFAULT_DATASET] || DIGEST_OF[DEFAULT_DATASET];
+export const pageOf = (dataset) => PAGE_OF[dataset || DEFAULT_DATASET] || PAGE_OF[DEFAULT_DATASET];
 export const STATUS_LABEL = { ok: "success", fail: "fail", void: "not a result", wait: "awaiting digest", empty: "not run" };
 
 // ---------- helpers ----------
@@ -61,6 +67,48 @@ export const encRev = (rev) => encodeURIComponent(rev);
 export const encPath = (p) => p.split("/").map(encodeURIComponent).join("/");
 export const hfResolveIn = (dataset, rev, path) => `${HF}/datasets/${dataset}/resolve/${encRev(rev)}/${encPath(path)}`;
 export const hfBlobIn = (dataset, rev, path) => `${HF}/datasets/${dataset}/tree/${encRev(rev)}/${encPath(path)}`;
+
+// ---------- the live listing of a dataset: main and its open pull requests ----------
+
+// fn over items, at most n at a time; the results in the items' order
+export async function pool(items, n, fn) {
+  const out = [];
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length) { const k = i++; out[k] = await fn(items[k]); }
+  }));
+  return out;
+}
+export async function hfTreeIn(dataset, rev, path) {
+  const url = `${HF}/api/datasets/${dataset}/tree/${encRev(rev)}${path ? "/" + encPath(path) : ""}?expand=true`;
+  return (await getJSON(url, { optional: true })) || [];
+}
+export async function hfRevisionsIn(dataset) {
+  const revs = [{ rev: "main", label: "main" }];
+  for (let p = 0; p < 20; p++) {
+    const d = await getJSON(`${HF}/api/datasets/${dataset}/discussions?p=${p}`);
+    for (const x of d.discussions || []) if (x.isPullRequest && x.status === "open") revs.push({ rev: `refs/pr/${x.num}`, label: `PR #${x.num}` });
+    if (!d.discussions?.length || (p + 1) * 50 >= (d.count || 0)) break;
+  }
+  return revs;
+}
+// every <helper>/<batch>/<bundle>/ folder: {key, rev, label, path, uploaded_at}; a folder both in main and in a pull
+// request is the merged one
+export async function listBundlesIn(dataset) {
+  const out = [];
+  for (const { rev, label } of await hfRevisionsIn(dataset)) {
+    const helpers = (await hfTreeIn(dataset, rev, "")).filter((e) => e.type === "directory");
+    for (const h of helpers) {
+      const batches = (await hfTreeIn(dataset, rev, h.path)).filter((e) => e.type === "directory");
+      const lists = await pool(batches, 4, (b) => hfTreeIn(dataset, rev, b.path));
+      lists.forEach((us) => us.filter((e) => e.type === "directory").forEach((u) => out.push({
+        key: u.path.split("/").join("__"), rev, label, path: u.path, uploaded_at: u.lastCommit?.date || null,
+      })));
+    }
+  }
+  const seen = new Set();
+  return out.sort((a, b) => (a.rev !== "main") - (b.rev !== "main")).filter((b) => !seen.has(b.key) && seen.add(b.key));
+}
 
 export function statusOf(t) {
   if (t.result === "success") return "ok";
