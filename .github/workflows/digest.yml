@@ -63,20 +63,26 @@ jobs:
             exit 1
           fi
 
-  publish:
+  # the site as main has it after both digests pushed. The upload and the deploy stay in separate jobs, as before the
+  # rebuttal digest: with both in the publish job, deploy-pages found no "github-pages" artifact (2026-11-19)
+  site:
     needs: digest
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      # main after both digests pushed
       - uses: actions/checkout@v4
         with:
           ref: main
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
+
+  publish:
+    needs: site
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
